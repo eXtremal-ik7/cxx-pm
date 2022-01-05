@@ -1,0 +1,52 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -101,6 +101,11 @@
+ option(TBB_CPF "Enable preview features of the library" OFF)
+ option(TBB_FIND_PACKAGE "Enable search for external oneTBB using find_package instead of build from sources" OFF)
+ option(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH "Disable HWLOC automatic search by pkg-config tool" OFF)
++option(TBB_USE_EXCEPTIONS "Use exceptions" ON)
++
++if (NOT TBB_USE_EXCEPTIONS)
++  add_definitions(-DTBB_USE_EXCEPTIONS=0)
++endif()
+ 
+ if (NOT DEFINED BUILD_SHARED_LIBS)
+     set(BUILD_SHARED_LIBS ON)
+diff -ur a/include/oneapi/tbb/detail/_exception.h b/include/oneapi/tbb/detail/_exception.h
+--- a/include/oneapi/tbb/detail/_exception.h
++++ b/include/oneapi/tbb/detail/_exception.h
+@@ -73,9 +73,10 @@
+ 
+ #if __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
+ //! Exception for impossible finalization of task_sheduler_handle
+-class unsafe_wait : public std::runtime_error {
++class TBB_EXPORT unsafe_wait : public std::runtime_error {
+ public:
+     unsafe_wait(const char* msg) : std::runtime_error(msg) {}
++    const char* __TBB_EXPORTED_METHOD what() const noexcept(true) override;
+ };
+ #endif // __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
+ 
+diff -ur a/src/tbb/exception.cpp b/src/tbb/exception.cpp
+--- a/src/tbb/exception.cpp
++++ b/src/tbb/exception.cpp
+@@ -39,6 +39,7 @@
+ const char* bad_last_alloc::what() const noexcept(true) { return "bad allocation in previous or concurrent attempt"; }
+ const char* user_abort::what() const noexcept(true) { return "User-initiated abort has terminated this operation"; }
+ const char* missing_wait::what() const noexcept(true) { return "wait() was not called on the structured_task_group"; }
++const char* unsafe_wait::what() const noexcept(true) { return "wait() was unsafe"; }
+ 
+ #if TBB_USE_EXCEPTIONS
+     template <typename F>
+diff -ur a/src/tbb/task_dispatcher.h b/src/tbb/task_dispatcher.h
+--- a/src/tbb/task_dispatcher.h
++++ b/src/tbb/task_dispatcher.h
+@@ -355,7 +355,7 @@
+             break; // Exit exception loop;
+         } catch (...) {
+             if (global_control::active_value(global_control::terminate_on_exception) == 1) {
+-                do_throw_noexcept([] { throw; });
++                throw;
+             }
+             if (ed.context->cancel_group_execution()) {
+                 /* We are the first to signal cancellation, so store the exception that caused it. */

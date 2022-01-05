@@ -1,0 +1,50 @@
+source meta.build
+
+TYPE="archive"
+URL="https://github.com/oneapi-src/oneTBB/archive/refs/tags/v2021.4.0.tar.gz"
+SHA3="32fadf2fe19206411121ee14c548e06f30cbadf56ee848294b69b8eeb462bc1b"
+
+build() {
+  eval "CMAKE_CONFIGURE_ARGS=${CXXPM_CMAKE_CONFIGURE_ARGS}"
+  eval "CMAKE_BUILD_ARGS=${CXXPM_CMAKE_BUILD_ARGS}"
+
+  cd ${CXXPM_SOURCE_DIR}/oneTBB-${CXXPM_PACKAGE_VERSION}
+  patch -p1 < ${CXXPM_PACKAGE_DIR}/2021.4.0-exceptions.patch
+  
+  cd ${CXXPM_BUILD_DIR}
+  cmake \
+    ${CXXPM_SOURCE_DIR}/oneTBB-${CXXPM_PACKAGE_VERSION} \
+    -DCMAKE_INSTALL_PREFIX=${CXXPM_INSTALL_DIR} \
+    -DTBB_TEST=OFF \
+    -DTBB_EXAMPLES=OFF \
+    -DTBB_USE_EXCEPTIONS=OFF \
+    "${CMAKE_CONFIGURE_ARGS[@]}"
+    
+  cmake --build . -j${CXXPM_NPROC} --target install "${CMAKE_BUILD_ARGS[@]}"
+}
+
+artifacts() {
+  if [ "${CXXPM_BUILD_TYPE}" = "Debug" ]
+  then
+    DEFS='["TBB_USE_DEBUG"]'
+    DEBUG_SUFFIX="_debug"
+  else
+    DEFS='[]'
+  fi
+
+
+echo $(cat <<-END
+  [
+    {"type": "include", "name": "TBB_INCLUDE_DIRECTORY", "path": "include"},
+    {
+      "type": "shared_lib",
+      "name": "TBB::tbb",
+      "path": "lib/${CXXPM_LIBRARY_PREFIX}tbb${DEBUG_SUFFIX}${CXXPM_SHARED_LIBRARY_SUFFIX}",
+      "dll": "bin/tbb12${DEBUG_SUFFIX}.dll",
+      "implib": "lib/${CXXPM_LIBRARY_PREFIX}tbb12${DEBUG_SUFFIX}${CXXPM_STATIC_LIBRARY_SUFFIX}",
+      "includes": ["TBB_INCLUDE_DIRECTORY"],
+      "definitions": ${DEFS}
+    }
+  ]
+END)
+}

@@ -1,0 +1,3 @@
+DEFAULT_VERSION="1.1.9000-fd3dc29"
+PACKAGE_TYPE="source"
+LANGS="C,C++"

@@ -1,0 +1,46 @@
+source meta.build
+
+TYPE="archive"
+URL="https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz"
+SHA3="d5d43ba74719ed38632f2af89137638ba0451376181abfed62cb51a702cc043e"
+
+build() {
+  eval "CMAKE_CONFIGURE_ARGS=${CXXPM_CMAKE_CONFIGURE_ARGS}"
+  eval "CMAKE_BUILD_ARGS=${CXXPM_CMAKE_BUILD_ARGS}"
+
+  cd ${CXXPM_BUILD_DIR}
+  cmake \
+    ${CXXPM_SOURCE_DIR}/zeromq-${CXXPM_PACKAGE_VERSION} \
+    -DCMAKE_INSTALL_PREFIX=${CXXPM_INSTALL_DIR} \
+    -DZMQ_BUILD_TESTS=OFF \
+    -DWITH_LIBSODIUM=OFF \
+    "${CMAKE_CONFIGURE_ARGS[@]}"
+    
+  cmake --build . -j${CXXPM_NPROC} --target install "${CMAKE_BUILD_ARGS[@]}"
+}
+
+artifacts() {
+  if [[ "${CXXPM_SYSTEM_NAME}" = "Windows" && "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]]
+  then
+    LIBRARY_PREFIX="lib"
+    case "${CXXPM_BUILD_TYPE}" in
+	  "Debug") SUFFIX="-${CXXPM_MSVC_TOOLSET}-mt-sgd-4_3_4";;
+	  *)       SUFFIX="-${CXXPM_MSVC_TOOLSET}-mt-s-4_3_4";;
+	esac
+  else
+    LIBRARY_PREFIX=${CXXPM_LIBRARY_PREFIX}
+  fi
+
+echo $(cat <<-END
+  [
+    {"type": "include", "name": "ZEROMQ_INCLUDE_DIRECTORY", "path": "include"},
+    {
+      "type": "static_lib",
+      "name": "ZeroMQ::libzmq-static",
+      "path": "lib/${LIBRARY_PREFIX}zmq${SUFFIX}${CXXPM_STATIC_LIBRARY_SUFFIX}",
+      "includes": ["ZEROMQ_INCLUDE_DIRECTORY"],
+      "definitions": ["ZMQ_STATIC"]
+    }
+  ]
+END)
+}

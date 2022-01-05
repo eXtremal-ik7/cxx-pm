@@ -1,0 +1,42 @@
+source meta.build
+
+TYPE="archive"
+URL="https://github.com/facebook/rocksdb/archive/refs/tags/v6.27.3.tar.gz"
+SHA3="99c00757dbf25e921db92b45388f93b32e7b2bbd1521b1d7efc9dbf994dfca3a"
+
+build() {
+  eval "CMAKE_CONFIGURE_ARGS=${CXXPM_CMAKE_CONFIGURE_ARGS}"
+  eval "CMAKE_BUILD_ARGS=${CXXPM_CMAKE_BUILD_ARGS}"
+
+  if [ "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]
+  then
+    INSTALL_ON_WINDOWS="-DROCKSDB_INSTALL_ON_WINDOWS=ON"
+  else
+    INSTALL_ON_WINDOWS="-DROCKSDB_INSTALL_ON_WINDOWS=OFF"
+  fi
+
+  cd ${CXXPM_BUILD_DIR}
+  cmake \
+    ${CXXPM_SOURCE_DIR}/rocksdb-${CXXPM_PACKAGE_VERSION} \
+    -DCMAKE_INSTALL_PREFIX=${CXXPM_INSTALL_DIR} \
+    -DWITH_TESTS=OFF \
+    -DWITH_GFLAGS=OFF \
+    -DWITH_BENCHMARK_TOOLS=OFF \
+    -DWITH_CORE_TOOLS=OFF \
+    -DWITH_TOOLS=OFF \
+    -DPORTABLE=ON \
+    -DFAIL_ON_WARNINGS=OFF \
+    "${INSTALL_ON_WINDOWS}" \
+    "${CMAKE_CONFIGURE_ARGS[@]}"
+    
+  cmake --build . -j${CXXPM_NPROC} --target install "${CMAKE_BUILD_ARGS[@]}"
+}
+
+artifacts() {
+echo $(cat <<-END
+  [
+    {"type": "include", "name": "ROCKSDB_INCLUDE_DIRECTORY", "path": "include"},
+    {"type": "static_lib", "name": "RocksDB::rocksdb", "path": "lib/${CXXPM_LIBRARY_PREFIX}rocksdb${CXXPM_STATIC_LIBRARY_SUFFIX}", "includes": ["ROCKSDB_INCLUDE_DIRECTORY"]}
+  ]
+END)
+}

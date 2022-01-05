@@ -1,0 +1,61 @@
+source meta.build
+
+TYPE="archive"
+URL="https://gmplib.org/download/gmp/gmp-6.2.1.tar.lz"
+SHA3="427b1738448ca775896a0a9f49db50a82c7dd6eb412dcd8dcb1e463bb678d3ad"
+
+build() {
+  if [[ "${CXXPM_SYSTEM_NAME}" = "Windows" && "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]]
+  then
+    echo "Can't build gmp with visual studio, use mpir instead"
+    exit 1
+  fi
+
+  if [[ "${CXXPM_SYSTEM_NAME}" = "Darwin" && "${CXXPM_COMPILER_C_TYPE}" = "clang" ]]
+  then
+    C_FLAGS="-arch ${CXXPM_CLANG_ARCH}"
+    CXX_FLAGS="-arch ${CXXPM_CLANG_ARCH}"
+  fi
+
+  cd ${CXXPM_BUILD_DIR}
+  ${CXXPM_SOURCE_DIR}/gmp-${CXXPM_PACKAGE_VERSION}/configure \
+    --prefix=${CXXPM_INSTALL_DIR} \
+    --host=${CXXPM_AUTOTOOLS_HOST} \
+    --disable-static \
+    --enable-shared \
+    --enable-cxx \
+    "CC=${CXXPM_COMPILER_C_COMMAND}" \
+    "CXX=${CXXPM_COMPILER_CXX_COMMAND}" \
+    "CFLAGS=${C_FLAGS}" \
+    "CXXFLAGS=${CXX_FLAGS}"
+  make -j${CXXPM_NPROC}
+  make install
+}
+
+artifacts() {
+  GMP_DLL_SUFFIX="-10.dll"
+  GMPXX_DLL_SUFFIX="-4.dll"
+  IMPLIB_SUFFIX=".dll.a"
+
+echo $(cat <<-END
+  [
+    {"type": "include", "name": "GMP_INCLUDE_DIRECTORY", "path": "include"},
+    {
+      "type": "shared_lib",
+      "name": "gmp::libgmp",
+      "path": "lib/${CXXPM_LIBRARY_PREFIX}gmp${CXXPM_SHARED_LIBRARY_SUFFIX}",
+      "dll": "bin/${CXXPM_LIBRARY_PREFIX}gmp${GMP_DLL_SUFFIX}",
+      "implib": "lib/${CXXPM_LIBRARY_PREFIX}gmp${IMPLIB_SUFFIX}",
+      "includes": ["GMP_INCLUDE_DIRECTORY"]
+    },
+    {
+      "type": "shared_lib",
+      "name": "gmp::libgmpxx",
+      "path": "lib/${CXXPM_LIBRARY_PREFIX}gmpxx${CXXPM_SHARED_LIBRARY_SUFFIX}",
+      "dll": "bin/${CXXPM_LIBRARY_PREFIX}gmpxx${GMPXX_DLL_SUFFIX}",
+      "implib": "lib/${CXXPM_LIBRARY_PREFIX}gmpxx${IMPLIB_SUFFIX}",
+      "includes": ["GMP_INCLUDE_DIRECTORY"]
+    }
+  ]
+END)
+}

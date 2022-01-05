@@ -1,0 +1,111 @@
+source meta.build
+
+TYPE="git"
+URL="https://github.com/BrianGladman/mpir"
+
+build() {
+  if [[ "${CXXPM_SYSTEM_NAME}" = "Windows" && "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]]
+  then
+    case "${CXXPM_MSVC_TOOLSET}" in
+	  "v120") SOLUTION_DIR="vs13";;
+	  "v140") SOLUTION_DIR="vs15";;
+	  "v141") SOLUTION_DIR="vs17";;
+	  "v142") SOLUTION_DIR="vs19";;
+	  "v143") SOLUTION_DIR="vs22";;
+	esac
+	
+	if [ "${SOLUTION_DIR}" == "" ]
+	then
+	  echo "Unsupported visual studio version ${CXXPM_MSVC_TOOLSET}"
+	  exit 1
+	fi
+	
+	cd ${CXXPM_SOURCE_DIR}/msvc/${SOLUTION_DIR}
+	cmd //c "msbuild.bat gc DLL ${CXXPM_MSVC_ARCH} ${CXXPM_BUILD_TYPE}"
+	
+	mkdir ${CXXPM_INSTALL_DIR}/include
+	mkdir ${CXXPM_INSTALL_DIR}/lib
+  mkdir ${CXXPM_INSTALL_DIR}/bin
+	cp ${CXXPM_SOURCE_DIR}/dll/${CXXPM_MSVC_ARCH}/${CXXPM_BUILD_TYPE}/*.h ${CXXPM_INSTALL_DIR}/include/
+  cp ${CXXPM_SOURCE_DIR}/dll/${CXXPM_MSVC_ARCH}/${CXXPM_BUILD_TYPE}/*.dll ${CXXPM_INSTALL_DIR}/bin/
+	cp ${CXXPM_SOURCE_DIR}/dll/${CXXPM_MSVC_ARCH}/${CXXPM_BUILD_TYPE}/*.lib ${CXXPM_INSTALL_DIR}/lib/
+  else
+    if [[ "${CXXPM_SYSTEM_NAME}" = "Darwin" && "${CXXPM_COMPILER_C_TYPE}" = "clang" ]]
+    then
+      C_FLAGS="-arch ${CXXPM_CLANG_ARCH}"
+      CXX_FLAGS="-arch ${CXXPM_CLANG_ARCH}"
+    fi
+
+    cd ${CXXPM_SOURCE_DIR}
+    ./autogen.sh
+  
+    cd ${CXXPM_BUILD_DIR}
+    ${CXXPM_SOURCE_DIR}/configure \
+      --prefix=${CXXPM_INSTALL_DIR} \
+      --host=${CXXPM_AUTOTOOLS_HOST} \
+      --disable-static \
+      --enable-shared \
+      --enable-cxx \
+      "CC=${CXXPM_COMPILER_C_COMMAND}" \
+      "CXX=${CXXPM_COMPILER_CXX_COMMAND}" \
+      "CFLAGS=${C_FLAGS}" \
+      "CXXFLAGS=${CXX_FLAGS}"
+    make -j${CXXPM_NPROC}
+    make install
+  fi
+}
+
+artifacts-msvc() {
+echo $(cat <<-END
+  [
+    {"type": "include", "name": "MPIR_INCLUDE_DIRECTORY", "path": "include"},
+    {
+      "type": "shared_lib",
+      "name": "mpir::libmpir",
+      "path": "",
+      "dll": "bin/mpir.dll",
+      "implib": "lib/mpir.lib",
+      "includes": ["MPIR_INCLUDE_DIRECTORY"]
+    },
+    {"type": "libset", "name": "MPIR_LIBRARIES", "libs": ["mpir::libmpir"]}
+  ]
+END)
+}
+
+artifacts-other() {
+  MPIR_DLL_SUFFIX="-23.dll"
+  MPIRXX_DLL_SUFFIX="-8.dll"
+  IMPLIB_SUFFIX=".dll.a"
+
+echo $(cat <<-END
+  [
+    {"type": "include", "name": "MPIR_INCLUDE_DIRECTORY", "path": "include"},
+    {
+      "type": "shared_lib",
+      "name": "mpir::libmpir",
+      "path": "lib/${CXXPM_LIBRARY_PREFIX}mpir${CXXPM_SHARED_LIBRARY_SUFFIX}",
+      "dll": "bin/${CXXPM_LIBRARY_PREFIX}mpir${MPIR_DLL_SUFFIX}",
+      "implib": "lib/${CXXPM_LIBRARY_PREFIX}mpir${IMPLIB_SUFFIX}",
+      "includes": ["MPIR_INCLUDE_DIRECTORY"]
+    },
+    {
+      "type": "shared_lib",
+      "name": "mpir::libmpirxx",
+      "path": "lib/${CXXPM_LIBRARY_PREFIX}mpirxx${CXXPM_SHARED_LIBRARY_SUFFIX}",
+      "dll": "bin/${CXXPM_LIBRARY_PREFIX}mpirxx${MPIRXX_DLL_SUFFIX}",
+      "implib": "lib/${CXXPM_LIBRARY_PREFIX}mpirxx${IMPLIB_SUFFIX}",
+      "includes": ["MPIR_INCLUDE_DIRECTORY"]
+    },
+    {"type": "libset", "name": "MPIR_LIBRARIES", "libs": ["mpir::libmpir", "mpir::libmpirxx"]}
+  ]
+END)
+}
+
+artifacts() {
+  if [ "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]
+  then
+    artifacts-msvc
+  else
+    artifacts-other
+  fi
+}

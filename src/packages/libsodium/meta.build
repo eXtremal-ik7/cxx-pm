@@ -1,0 +1,3 @@
+DEFAULT_VERSION="1.0.18"
+PACKAGE_TYPE="source"
+LANGS="C,C++"

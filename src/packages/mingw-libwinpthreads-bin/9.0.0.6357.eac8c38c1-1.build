@@ -1,0 +1,10 @@
+source meta.build
+
+Windows_x86_64_TYPE="archive"
+Windows_x86_64_URL="https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-libwinpthread-git-9.0.0.6357.eac8c38c1-1-any.pkg.tar.zst"
+Windows_x86_64_SHA3="484de748d3a8a1e2b981de970eb6c9ad3126a8ab524e90314ab57225c129834c"
+
+# No native package for arm64
+Windows_aarch64_TYPE="archive"
+Windows_aarch64_URL="https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-libwinpthread-git-9.0.0.6357.eac8c38c1-1-any.pkg.tar.zst"
+Windows_aarch64_SHA3="484de748d3a8a1e2b981de970eb6c9ad3126a8ab524e90314ab57225c129834c"

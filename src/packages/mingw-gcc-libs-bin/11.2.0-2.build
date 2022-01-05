@@ -1,0 +1,10 @@
+source meta.build
+
+Windows_x86_64_TYPE="archive"
+Windows_x86_64_URL="https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-gcc-libs-11.2.0-2-any.pkg.tar.zst"
+Windows_x86_64_SHA3="148ecafa925a0a0219aab59b0ca4d8aee52eae4ac5fabb06e10ffd03859376d8"
+
+# No native package for arm64
+Windows_aarch64_TYPE="archive"
+Windows_aarch64_URL="https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-gcc-libs-11.2.0-2-any.pkg.tar.zst"
+Windows_aarch64_SHA3="148ecafa925a0a0219aab59b0ca4d8aee52eae4ac5fabb06e10ffd03859376d8"
