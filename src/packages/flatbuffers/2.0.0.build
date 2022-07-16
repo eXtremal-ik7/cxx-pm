@@ -1,0 +1,40 @@
+source meta.build
+
+TYPE="archive"
+URL="https://github.com/google/flatbuffers/archive/refs/tags/v2.0.0.tar.gz"
+SHA3="9fc08aee067dba5d5029a9eb15d7edd87b1b6c665019cb0bc6c3404c7d50f38c"
+
+build() {
+  if [ "${CXXPM_COMPILER_C_TYPE}" = "clang" ]
+  then
+    cd ${CXXPM_SOURCE_DIR}/flatbuffers-${CXXPM_PACKAGE_VERSION}/include/flatbuffers
+    patch -p0 < ${CXXPM_PACKAGE_DIR}/2.0.0-clang.patch
+  fi
+
+  eval "CMAKE_CONFIGURE_ARGS=${CXXPM_CMAKE_CONFIGURE_ARGS}"
+  eval "CMAKE_BUILD_ARGS=${CXXPM_CMAKE_BUILD_ARGS}"
+
+  cd ${CXXPM_BUILD_DIR}
+  cmake \
+    ${CXXPM_SOURCE_DIR}/flatbuffers-${CXXPM_PACKAGE_VERSION} \
+    -DCMAKE_INSTALL_PREFIX=${CXXPM_INSTALL_DIR} \
+    "${CMAKE_CONFIGURE_ARGS[@]}"
+    
+  cmake --build . -j${CXXPM_NPROC} --target install "${CMAKE_BUILD_ARGS[@]}"
+  cp ${CXXPM_SOURCE_DIR}/flatbuffers-${CXXPM_PACKAGE_VERSION}/CMake/BuildFlatBuffers.cmake ${CXXPM_INSTALL_DIR}/lib/cmake/flatbuffers
+}
+
+artifacts() {
+  CMAKE_MODULE="lib/cmake/flatbuffers/FlatbuffersConfig.cmake"
+  CMAKE_BUILD_MODULE="lib/cmake/flatbuffers/BuildFlatBuffers.cmake"
+
+echo $(cat <<-END
+  [
+    {"type": "include", "name": "FLATBUFFERS_INCLUDE_DIRECTORY", "path": "include"},
+    {"type": "static_lib", "name": "flatbuffers::libflatbuffers", "path": "lib/${CXXPM_LIBRARY_PREFIX}flatbuffers${CXXPM_STATIC_LIBRARY_SUFFIX}", "includes": ["FLATBUFFERS_INCLUDE_DIRECTORY"]},
+    {"type": "executable", "name": "flatbuffers::flatc", "path": "bin/flatc${CXXPM_EXECUTABLE_SUFFIX}"},
+    {"type": "cmake_module", "name": "config", "path": "${CMAKE_MODULE}"},
+    {"type": "cmake_module", "name": "config", "path": "${CMAKE_BUILD_MODULE}"}
+  ]
+END)
+}

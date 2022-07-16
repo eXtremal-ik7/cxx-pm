@@ -4,6 +4,7 @@
 #include "exec.h"
 #include "os.h"
 #include "strExtras.h"
+#include <sstream>
 #include <Windows.h>
 
 std::string getVsArch(std::string_view processor)

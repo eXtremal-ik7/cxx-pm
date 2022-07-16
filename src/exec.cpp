@@ -1,7 +1,7 @@
 #include "exec.h"
 #include <strExtras.h>
-
 #include <string.h>
+
 #ifndef WIN32
 #include <unistd.h>
 #include <sys/wait.h>
@@ -9,6 +9,8 @@ extern char** environ;
 #else
 #include <windows.h>
 #endif
+
+#include <mutex>
 
 #ifdef WIN32
 struct JobSingletone {
