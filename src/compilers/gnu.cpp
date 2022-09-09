@@ -18,6 +18,7 @@ static const CCpuMapping gProcessorMapping[] = {
 static const CSystemMapping gSystemNameMapping[] = {
   {"apple-darwin", "Darwin", "", true},
   {"linux-gnu", "Linux", "", true},
+  {"pc-linux-gnu", "Linux", "", true},
   {"pc-cygwin", "Windows", "cygwin", true},
   {"w64-mingw32", "Windows", "mingw-w64", true}
 };
