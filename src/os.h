@@ -34,6 +34,8 @@ struct CSystemInfo {
   std::filesystem::path VCInstallDir;
   std::string VCToolSet;
   std::string VSToolSetVersion;
+  // MacOS specific
+  std::filesystem::path ISysRoot;
 };
 
 std::string systemProcessorNormalize(const std::string_view processor);

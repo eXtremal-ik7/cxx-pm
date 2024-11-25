@@ -4,14 +4,6 @@ TYPE="archive"
 URL="https://www.openssl.org/source/openssl-1.1.1l.tar.gz"
 SHA3="2452ddc26647c031e5c7e4b1988b9d69dc5c48953807536b7ac2e46fad2606d3"
 
-SOURCES='[
-  {
-    "type": "archive",
-    "urls": ["https://www.openssl.org/source/openssl-1.1.1l.tar.gz"],
-    "sha3": "2452ddc26647c031e5c7e4b1988b9d69dc5c48953807536b7ac2e46fad2606d3"
-  }
-]'
-
 USE='[
   {"name": "shared"}
 ]'
@@ -62,6 +54,13 @@ build() {
     exit 1
   fi
 
+  # isysroot
+  if [[ "${CXXPM_SYSTEM_NAME}" = "Darwin" ]];
+  then
+    ISYSROOT='"-isysroot ${CXXPM_ISYSROOT}"'
+    eval "ISYSROOT=${ISYSROOT}"
+  fi
+
   # Perl & make utility
   if [[ "${CXXPM_SYSTEM_NAME}" = "Windows" && "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]];
   then
@@ -91,6 +90,9 @@ build() {
   if [[ "${CXXPM_SYSTEM_NAME}" = "Windows" && "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]]
   then
     ${OPENSSL_PERL} ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} no-shared
+  elif [[ "${CXXPM_SYSTEM_NAME}" = "Darwin" ]]
+  then
+    ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} CC=${CXXPM_COMPILER_C_COMMAND} no-shared "${ISYSROOT[@]}"
   else
     ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} CC=${CXXPM_COMPILER_C_COMMAND} no-shared WINDRES=${CXXPM_TOOL_RC_COMMAND}
   fi

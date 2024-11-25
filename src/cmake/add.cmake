@@ -24,6 +24,10 @@ function(__cxxpm_prepare)
     
     set(CXXPM_C_COMPILER_ARG "--compiler=C:${CMAKE_C_COMPILER}" PARENT_SCOPE)
     set(CXXPM_CXX_COMPILER_ARG "--compiler=C++:${CMAKE_CXX_COMPILER}" PARENT_SCOPE)
+
+    if (CMAKE_OSX_SYSROOT)
+      set(CXXPM_ISYSROOT_ARG "--isysroot=${CMAKE_OSX_SYSROOT}" PARENT_SCOPE)
+    endif()
   endif()
   
   
@@ -33,6 +37,7 @@ function(__cxxpm_install cxxpm name configuration)
   execute_process(COMMAND ${cxxpm}
     ${CXXPM_VC_INSTALL_DIR_ARG}
     ${CXXPM_VC_TOOLSET_ARG}
+    ${CXXPM_ISYSROOT_ARG}
     ${CXXPM_C_COMPILER_ARG}
     ${CXXPM_CXX_COMPILER_ARG}
     "--system-name=${CXXPM_SYSTEM_NAME}"

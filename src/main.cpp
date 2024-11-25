@@ -31,6 +31,7 @@ extern "C" {
 #include <unordered_set>
 #include <vector>
 
+
 enum CmdLineOptsTy {
   clOptHelp = 1,
   clOptCompilerCommand,
@@ -40,17 +41,17 @@ enum CmdLineOptsTy {
   clOptBuildTypeMapping,
   clOptVSInstallDir,
   clOptVCToolset,
-  clOptSysRoot,
+  clOptCxxpmRoot,
   clOptUseFlags,
   clOptSystemName,
   clOptSystemProcessor,
+  clOptISysRoot,
   clOptKey,
   clOptPackageList,
   clOptSearchPath,
   clOptSearchPathType,
   clOptInstall,
   clOptExportCMake,
-  clOptPackageRoot,
   clOptPackageExtraDirectory,
   clOptFile,
   clOptVerbose,
@@ -71,11 +72,12 @@ static option cmdLineOpts[] = {
   {"use-flags", required_argument, nullptr, clOptUseFlags},
   {"system-name", required_argument, nullptr, clOptSystemName},
   {"system-processor", required_argument, nullptr, clOptSystemProcessor},
+  {"isysroot", required_argument, nullptr, clOptISysRoot},
   {"build-type", required_argument, nullptr, clOptBuildType},
   {"build-type-mapping", required_argument, nullptr, clOptBuildTypeMapping},
   {"vs-install-dir", required_argument, nullptr, clOptVSInstallDir},
   {"vc-toolset", required_argument, nullptr, clOptVCToolset},
-  {"sys-root", required_argument, nullptr, clOptSysRoot},
+  {"cxxpm-root", required_argument, nullptr, clOptCxxpmRoot},
   // modes
   {"help", no_argument, nullptr, clOptHelp},
   {"package-list", no_argument, nullptr, clOptPackageList},
@@ -85,7 +87,6 @@ static option cmdLineOpts[] = {
   {"export-cmake", required_argument, nullptr, clOptExportCMake},
   {"version", no_argument, nullptr, clOptVersion},
   // extra parameters
-  {"package-root", required_argument, nullptr, clOptPackageRoot},
   {"package-extra-dir", required_argument, nullptr, clOptPackageExtraDirectory},
   // arguments
   {"file", required_argument, nullptr, clOptFile},
@@ -699,13 +700,14 @@ int main(int argc, char **argv)
     setvbuf(stdout, buffer, _IOLBF, sizeof(buffer));
   }
 
-  std::filesystem::path sysRoot;
+  std::filesystem::path cxxpmRoot;
   std::vector<std::filesystem::path> extraPackageDirs;
   EModeTy mode = ENoMode;
   std::string packageName;
   std::string packageVersion;
   std::string toolchainSystemName;
   std::string toolchainSystemProcessor;
+  std::filesystem::path isysRoot;
   std::string buildType = "Release";
   std::string buildTypeMapping = "Debug:Debug;*:Release";
   std::string fileArgument;
@@ -723,6 +725,10 @@ int main(int argc, char **argv)
   int index = 0;
   while ((res = getopt_long(argc, argv, "", cmdLineOpts, &index)) != -1) {
     switch (res) {
+      case clOptCxxpmRoot: {
+        cxxpmRoot = optarg;
+        break;
+      }
       // compilers
       case clOptCompilerCommand : {
         if (!parseCompilerOption(ECompilerOptionType::Command, context.Compilers, optarg))
@@ -744,6 +750,9 @@ int main(int argc, char **argv)
         break;
       case clOptSystemProcessor :
         toolchainSystemProcessor = optarg;
+        break;
+      case clOptISysRoot :
+        isysRoot = optarg;
         break;
       case clOptBuildType :
         buildType = optarg;
@@ -798,9 +807,6 @@ int main(int argc, char **argv)
         outputPath = optarg;
         break;
       }
-      case clOptPackageRoot :
-        sysRoot = optarg;
-        break;
       case clOptPackageExtraDirectory :
         extraPackageDirs.push_back(optarg);
         break;
@@ -848,22 +854,22 @@ int main(int argc, char **argv)
   updatePath();
 #endif
 
-  if (sysRoot.empty())
-    sysRoot = userHomeDir() / ".cxxpm" / "self";
+  if (cxxpmRoot.empty())
+    cxxpmRoot = userHomeDir() / ".cxxpm" / "self";
 
-  if (!std::filesystem::exists(sysRoot)) {
-    fprintf(stderr, "ERROR: path not exists: %s\n", sysRoot.string().c_str());
+  if (!std::filesystem::exists(cxxpmRoot)) {
+    fprintf(stderr, "ERROR: path not exists: %s\n", cxxpmRoot.string().c_str());
     exit(1);
   }
 
-  if (!std::filesystem::exists(sysRoot / "packages")) {
-    fprintf(stderr, "ERROR: path not exists: %s\n", (sysRoot/"packages").string().c_str());
+  if (!std::filesystem::exists(cxxpmRoot / "packages")) {
+    fprintf(stderr, "ERROR: path not exists: %s\n", (cxxpmRoot/"packages").string().c_str());
     exit(1);
   }
 
   // Initialize
   // Paths
-  context.GlobalSettings.PackageRoot = sysRoot;
+  context.GlobalSettings.PackageRoot = cxxpmRoot;
   context.GlobalSettings.HomeDir = userHomeDir() / ".cxxpm";
   context.GlobalSettings.DistrDir = context.GlobalSettings.HomeDir / "distr";
   // Toolchain data
@@ -876,6 +882,13 @@ int main(int argc, char **argv)
 
   context.SystemInfo.TargetSystemName = toolchainSystemName.empty() ? context.SystemInfo.HostSystemName : toolchainSystemName;
   context.SystemInfo.TargetSystemProcessor = toolchainSystemProcessor.empty() ? context.SystemInfo.HostSystemProcessor : systemProcessorNormalize(toolchainSystemProcessor);
+  context.SystemInfo.ISysRoot = !isysRoot.empty() ? isysRoot : "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
+#ifdef __APPLE__
+  if (!std::filesystem::exists(context.SystemInfo.ISysRoot)) {
+    fprintf(stderr, "ERROR: isysroot path not exists: %s\n", context.SystemInfo.ISysRoot.string().c_str());
+    exit(1);
+  }
+#endif
 
   if (!doBuildTypeMapping(buildType, buildTypeMapping, context.SystemInfo.BuildType))
     return 1;
@@ -886,7 +899,7 @@ int main(int argc, char **argv)
   // Load all packages
   std::map<std::string, CPackage> packages;
   std::set<std::filesystem::path> visited;
-  for (const auto &folder: std::filesystem::directory_iterator{sysRoot / "packages"}) {
+  for (const auto &folder: std::filesystem::directory_iterator{cxxpmRoot / "packages"}) {
     CPackage package;
     package.Name = folder.path().filename().string();
     package.Path = folder.path();
@@ -898,7 +911,7 @@ int main(int argc, char **argv)
       fprintf(stderr, "ERROR: extra package directory %s specified twice\n", extraPackageDir.string().c_str());
       exit(1);
     }
-    for (const auto &folder: std::filesystem::directory_iterator{sysRoot / "packages"}) {
+    for (const auto &folder: std::filesystem::directory_iterator{cxxpmRoot / "packages"}) {
       auto It = packages.find(folder.path().filename().string());
       if (It == packages.end()) {
         // New package found

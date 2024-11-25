@@ -279,6 +279,7 @@ void prepareBuildEnvironment(std::vector<std::string> &env,
   addEnv(env, "CXXPM_BUILD_TYPE", buildType);
   addEnv(env, "CXXPM_SYSTEM_SUBTYPE", systemInfo.TargetSystemSubType);
   addEnv(env, "CXXPM_MSVC_TOOLSET", systemInfo.VSToolSetVersion);
+  addEnv(env, "CXXPM_ISYSROOT", pathConvert(systemInfo.ISysRoot, EPathType::Posix).string());
 
   // Compilers
   auto compilerEnvName = [](ELanguage lang, const std::string &envName) -> std::string {

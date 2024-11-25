@@ -85,6 +85,10 @@ std::string cmakeGetConfigureArgs(const CPackage &package, const CompilersArray 
     args.append("-DCMAKE_OSX_ARCHITECTURES=");
     args.append(gnuClangProcessorFromNormalized(systemInfo.TargetSystemProcessor));
     args.push_back(' ');
+
+    args.append("-DCMAKE_OSX_SYSROOT=");
+    args.append(systemInfo.ISysRoot);
+    args.push_back(' ');
   }
 
   for (ELanguage lang: package.Languages) {

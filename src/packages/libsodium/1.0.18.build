@@ -1,7 +1,7 @@
 source meta.build
 
 TYPE="archive"
-URL="https://download.libsodium.org/libsodium/releases/libsodium-1.0.18-stable.tar.gz"
+URL="https://dev.gentoo.org/~sam/distfiles/dev-libs/libsodium/libsodium-1.0.18-stable-20220618.tar.gz"
 SHA3="cab660726e1164eed1e15ff0ee82a907ff1402f33b50fc45309c11152aa2145d"
 
 build() {

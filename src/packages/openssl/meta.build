@@ -1,3 +1,114 @@
-DEFAULT_VERSION="1.1.1l"
+DEFAULT_VERSION="3.4.0"
 PACKAGE_TYPE="source"
 LANGS="C"
+
+build-meta() {
+  # Architecture
+  case "${CXXPM_SYSTEM_NAME}" in
+    # Linux
+    "Linux") case "${CXXPM_SYSTEM_PROCESSOR}" in
+      "x86") case "${CXXPM_COMPILER_C_TYPE}" in
+        "clang") OPENSSL_ARCH="linux-x86-clang";;
+         *)      OPENSSL_ARCH="linux-x86";;
+         esac;;
+      "x86_64") case "${CXXPM_COMPILER_C_TYPE}" in
+        "clang") OPENSSL_ARCH="linux-x86_64-clang";;
+         *)      OPENSSL_ARCH="linux-x86_64";;
+         esac;;
+      "aarch64") OPENSSL_ARCH="linux-aarch64";;
+      esac;;
+
+    # MacOS X
+    "Darwin") case "${CXXPM_SYSTEM_PROCESSOR}" in
+      "x86_64") OPENSSL_ARCH="darwin64-x86_64-cc";;
+      "aarch64") OPENSSL_ARCH="darwin64-arm64-cc";;
+      esac;;
+
+    # Windows
+    "Windows") case "${CXXPM_SYSTEM_SUBTYPE}" in
+      "msvc") case "${CXXPM_SYSTEM_PROCESSOR}" in
+        "x86")     OPENSSL_ARCH="VC-WIN32";;
+        "x86_64")  OPENSSL_ARCH="VC-WIN64A";;
+        "aarch64") OPENSSL_ARCH="VC-WIN64-ARM";;
+        esac;;
+      "mingw-w64") case "${CXXPM_SYSTEM_PROCESSOR}" in
+        "x86")     OPENSSL_ARCH="mingw";;
+        "x86_64")  OPENSSL_ARCH="mingw64";;
+        esac;;
+      "cygwin") case "${CXXPM_SYSTEM_PROCESSOR}" in
+        "x86")     OPENSSL_ARCH="Cygwin-x86";;
+        "x86_64")  OPENSSL_ARCH="Cygwin-x86_64";;
+      esac;;
+    esac;;
+  esac
+
+  if [ "${OPENSSL_ARCH}" = "" ]
+  then
+    echo "Cannot configure openssl with current toolchain"
+    exit 1
+  fi
+
+  # isysroot
+  if [[ "${CXXPM_SYSTEM_NAME}" = "Darwin" ]];
+  then
+    ISYSROOT='"-isysroot ${CXXPM_ISYSROOT}"'
+    eval "ISYSROOT=${ISYSROOT}"
+  fi
+
+  # Perl & make utility
+  if [[ "${CXXPM_SYSTEM_NAME}" = "Windows" && "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]];
+  then
+    echo "Visual studio build required perl than produces windows-style paths"
+    ${CXXPM_EXECUTABLE} ${CXXPM_ARGS} --install mingw-perl-bin
+    ${CXXPM_EXECUTABLE} ${CXXPM_ARGS} --install nasm-bin
+    NASM_PATH=`${CXXPM_EXECUTABLE} ${CXXPM_ARGS} --search-path nasm-bin --search-path-type=posix`/install/nasm-2.15.05
+    export PATH="$PATH:${NASM_PATH}"
+    OPENSSL_PERL=`${CXXPM_EXECUTABLE} ${CXXPM_ARGS} --search-path mingw-perl-bin --file bin/perl.exe`
+    OPENSSL_MAKE="nmake"
+  else
+    OPENSSL_PERL="perl"
+    OPENSSL_MAKE="make"
+  fi
+
+  # Build type
+  if [ "${CXXPM_BUILD_TYPE}" = "Debug" ]
+  then
+    BUILD_TYPE="--debug"
+  else
+    BUILD_TYPE="--release"
+  fi
+
+  # Configure
+  cd ${CXXPM_SOURCE_DIR}/openssl-${CXXPM_PACKAGE_VERSION}
+
+  if [[ "${CXXPM_SYSTEM_NAME}" = "Windows" && "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]]
+  then
+    ${OPENSSL_PERL} ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} no-shared
+  elif [[ "${CXXPM_SYSTEM_NAME}" = "Darwin" ]]
+  then
+    ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} CC=${CXXPM_COMPILER_C_COMMAND} no-shared "${ISYSROOT[@]}"
+  else
+    ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} CC=${CXXPM_COMPILER_C_COMMAND} no-shared WINDRES=${CXXPM_TOOL_RC_COMMAND}
+  fi
+
+  # Make & install
+  ${OPENSSL_MAKE} install_sw
+}
+
+artifacts-meta() {
+  if [ "${CXXPM_SYSTEM_NAME}" = "Windows" ]
+  then
+    LIBRARY_PREFIX="lib"
+  else
+    LIBRARY_PREFIX=${CXXPM_LIBRARY_PREFIX}
+  fi
+  
+echo $(cat <<-END
+  [
+    {"type": "include", "name": "OPENSSL_INCLUDE_DIRECTORY", "path": "include"},
+    {"type": "static_lib", "name": "OpenSSL::SSL", "path": "lib/${LIBRARY_PREFIX}ssl${CXXPM_STATIC_LIBRARY_SUFFIX}", "includes": ["OPENSSL_INCLUDE_DIRECTORY"]},
+    {"type": "static_lib", "name": "OpenSSL::Crypto", "path": "lib/${LIBRARY_PREFIX}crypto${CXXPM_STATIC_LIBRARY_SUFFIX}", "includes": ["OPENSSL_INCLUDE_DIRECTORY"]},
+    {"type": "libset", "name": "OPENSSL_LIBRARIES", "libs": ["OpenSSL::SSL", "OpenSSL::Crypto"]}
+  ]
+END)
+}

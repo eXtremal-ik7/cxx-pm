@@ -99,16 +99,7 @@ bool parseCompilerOption(ECompilerOptionType type, CompilersArray &compilers, co
   CCompilerInfo& info = compilers[static_cast<size_t>(lang)];
   switch (type) {
     case ECompilerOptionType::Command :
-#ifdef __APPLE__
-      if (value == "/Library/Developer/CommandLineTools/usr/bin/cc")
-        value = "clang";
-      else if (value == "/Library/Developer/CommandLineTools/usr/bin/c++")
-        value = "clang++";
-      else
-        info.Command = value;
-#else
       info.Command = value;
-#endif
       break;
     default:
       fprintf(stderr, "ERROR: unsupported compiler option: %s\n", option);
