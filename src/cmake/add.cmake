@@ -33,7 +33,7 @@ function(__cxxpm_prepare)
   
 endfunction()
 
-function(__cxxpm_install cxxpm name configuration)
+function(__cxxpm_install cxxpm name version configuration)
   execute_process(COMMAND ${cxxpm}
     ${CXXPM_VC_INSTALL_DIR_ARG}
     ${CXXPM_VC_TOOLSET_ARG}
@@ -44,6 +44,7 @@ function(__cxxpm_install cxxpm name configuration)
     "--system-processor=${CXXPM_SYSTEM_PROCESSOR}"
     "--build-type=${configuration}"
     "--install=${name}"
+    "--package-version=${version}"
     "--export-cmake=${CMAKE_CURRENT_BINARY_DIR}/${name}.cmake"
     RESULT_VARIABLE EXIT_CODE
     COMMAND_ECHO STDOUT)
@@ -53,7 +54,7 @@ function(__cxxpm_install cxxpm name configuration)
   endif()
 endfunction()
 
-function(cxxpm_add_package name)
+function(cxxpm_add_package name version)
   __cxxpm_prepare()
   get_property(CXXPM GLOBAL PROPERTY CXXPM_EXECUTABLE)
 
@@ -70,6 +71,6 @@ function(cxxpm_add_package name)
   endif()
 
   # Install package and export cmake file
-  __cxxpm_install(${CXXPM} ${name} ${CONFIGURATION})
+  __cxxpm_install(${CXXPM} ${name} ${version} ${CONFIGURATION})
   include(${CMAKE_CURRENT_BINARY_DIR}/${name}.cmake)
 endfunction()

@@ -52,6 +52,7 @@ enum CmdLineOptsTy {
   clOptSearchPathType,
   clOptInstall,
   clOptExportCMake,
+  clOptPackageVersion,
   clOptPackageExtraDirectory,
   clOptFile,
   clOptVerbose,
@@ -87,6 +88,7 @@ static option cmdLineOpts[] = {
   {"export-cmake", required_argument, nullptr, clOptExportCMake},
   {"version", no_argument, nullptr, clOptVersion},
   // extra parameters
+  {"package-version", required_argument, nullptr, clOptPackageVersion},
   {"package-extra-dir", required_argument, nullptr, clOptPackageExtraDirectory},
   // arguments
   {"file", required_argument, nullptr, clOptFile},
@@ -164,16 +166,18 @@ bool loadSingleVariable(const std::filesystem::path &path, const std::string &na
 bool packageQueryVersion(CPackage &package, const std::string &requestedVersion, bool verbose)
 {
   // Load default version from meta build
-  std::string version = requestedVersion;
-  if (!loadSingleVariable(package.Path / "meta.build", "DEFAULT_VERSION", version)) {
-    fprintf(stderr, "ERROR: can't load DEFAULT_VERSION from %s\n", (package.Path / "meta.build").string().c_str());
-    return false;
-  } else {
+  if (requestedVersion.empty() || requestedVersion == "default") {
+    if (!loadSingleVariable(package.Path / "meta.build", "DEFAULT_VERSION", package.Version)) {
+      fprintf(stderr, "ERROR: can't load DEFAULT_VERSION from %s\n", (package.Path / "meta.build").string().c_str());
+      return false;
+    }
+
     if (verbose)
-      printf("Default version for %s is %s\n", package.Name.c_str(), version.c_str());
+      printf("Default version for %s is %s\n", package.Name.c_str(), package.Version.c_str());
+  } else {
+    package.Version = requestedVersion;
   }
 
-  package.Version = version;
   return true;
 }
 
@@ -805,6 +809,10 @@ int main(int argc, char **argv)
       case clOptExportCMake : {
         exportCmake = true;
         outputPath = optarg;
+        break;
+      }
+      case clOptPackageVersion : {
+        packageVersion = optarg;
         break;
       }
       case clOptPackageExtraDirectory :
