@@ -8,6 +8,9 @@ build() {
   eval "CMAKE_CONFIGURE_ARGS=${CXXPM_CMAKE_CONFIGURE_ARGS}"
   eval "CMAKE_BUILD_ARGS=${CXXPM_CMAKE_BUILD_ARGS}"
 
+  cd ${CXXPM_SOURCE_DIR}/zeromq-${CXXPM_PACKAGE_VERSION}
+  patch -p1 < ${CXXPM_PACKAGE_DIR}/4.3.4-compilation-fix.patch
+
   cd ${CXXPM_BUILD_DIR}
   cmake \
     ${CXXPM_SOURCE_DIR}/zeromq-${CXXPM_PACKAGE_VERSION} \
