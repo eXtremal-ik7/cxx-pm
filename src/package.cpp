@@ -6,6 +6,7 @@
 #include "bs/autotools.h"
 #include "bs/cmake.h"
 #include "json/json11.hpp"
+#include <fstream>
 #include <thread>
 #ifdef WIN32
 #include "compilers/msvc.h"
@@ -54,6 +55,10 @@ std::filesystem::path packagePrefix(const std::filesystem::path &cxxPmHome, cons
     toolchainString.append(systemInfo.TargetSystemName);
     toolchainString.push_back('-');
     toolchainString.append(systemInfo.TargetSystemProcessor);
+    if (!systemInfo.ISysRoot.empty()) {
+      toolchainString.push_back('-');
+      toolchainString.append(systemInfo.ISysRoot);
+    }
 
     packageIdString.append(package.Version);
     packageIdString.push_back('-');
@@ -74,6 +79,24 @@ std::filesystem::path packagePrefix(const std::filesystem::path &cxxPmHome, cons
     if (verbose) {
       printf("toolchain: %s id: %s\n", toolchainString.c_str(), toolchainId.c_str());
       printf("package-id: %s id: %s\n", packageIdString.c_str(), packageId.c_str());
+    }
+
+    // update info.txt in toolchain directory
+    auto infoPath = cxxPmHome / toolchainId / "info.txt";
+    if (!std::filesystem::exists(infoPath)) {
+      std::ofstream output(infoPath.string().c_str());
+      output << "systemName=" << systemInfo.TargetSystemName << '\n';
+      output << "systemProcessor=" << systemInfo.TargetSystemProcessor << '\n';
+      if (!systemInfo.ISysRoot.empty())
+        output << "isysRoot=" << systemInfo.ISysRoot << '\n';
+
+      std::string previousId;
+      for (const ELanguage lang: package.Languages) {
+        const CCompilerInfo &info = compilers[static_cast<size_t>(lang)];
+        if (info.Id != previousId)
+          output << languageToString(lang) << "=" << info.Id << '\n';
+        previousId = info.Id;
+      }
     }
 
     return cxxPmHome / toolchainId / package.Name / (package.Version + "-" + buildType + "-" + packageId);

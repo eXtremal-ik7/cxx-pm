@@ -890,8 +890,31 @@ int main(int argc, char **argv)
 
   context.SystemInfo.TargetSystemName = toolchainSystemName.empty() ? context.SystemInfo.HostSystemName : toolchainSystemName;
   context.SystemInfo.TargetSystemProcessor = toolchainSystemProcessor.empty() ? context.SystemInfo.HostSystemProcessor : systemProcessorNormalize(toolchainSystemProcessor);
-  context.SystemInfo.ISysRoot = !isysRoot.empty() ? isysRoot : "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
+
 #ifdef __APPLE__
+  if (isysRoot.empty()) {
+    // try xcrun --show-sdk-path
+    std::filesystem::path fullPath;
+    std::string stdout;
+    std::string stderr;
+    if (run(".", "xcrun", {"--show-sdk-path"}, {}, fullPath, stdout, stderr, true)) {
+      context.SystemInfo.ISysRoot = stdout.substr(0, stdout.size() - 1);
+    } else {
+      context.SystemInfo.ISysRoot = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk";
+    }
+  } else {
+    context.SystemInfo.ISysRoot = isysRoot;
+  }
+
+  // resolve symlink
+  if (std::filesystem::exists(context.SystemInfo.ISysRoot) && std::filesystem::is_symlink(context.SystemInfo.ISysRoot)) {
+    auto link = std::filesystem::read_symlink(context.SystemInfo.ISysRoot);
+    if (link.is_absolute())
+      context.SystemInfo.ISysRoot = link;
+    else
+      context.SystemInfo.ISysRoot = context.SystemInfo.ISysRoot.parent_path() / link;
+  }
+
   if (!std::filesystem::exists(context.SystemInfo.ISysRoot)) {
     fprintf(stderr, "ERROR: isysroot path not exists: %s\n", context.SystemInfo.ISysRoot.string().c_str());
     exit(1);
