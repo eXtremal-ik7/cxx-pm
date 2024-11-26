@@ -1,0 +1,15 @@
+source meta.build
+
+DEPENDS="
+mingw-gcc-libs-bin
+mingw-libwinpthreads-bin
+"
+
+Windows_x86_64_TYPE="archive"
+Windows_x86_64_URL="https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-perl-5.38.2-1-any.pkg.tar.zst"
+Windows_x86_64_SHA3="12902799fd22ff50faf4011b87dfbc754603965076164d4c7cd4ab22100dedbe"
+
+# No native package for arm64
+Windows_aarch64_TYPE="archive"
+Windows_aarch64_URL="https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-perl-5.38.2-1-any.pkg.tar.zst"
+Windows_aarch64_SHA3="12902799fd22ff50faf4011b87dfbc754603965076164d4c7cd4ab22100dedbe"

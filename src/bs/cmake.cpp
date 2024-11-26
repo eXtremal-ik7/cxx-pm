@@ -87,7 +87,7 @@ std::string cmakeGetConfigureArgs(const CPackage &package, const CompilersArray 
     args.push_back(' ');
 
     args.append("-DCMAKE_OSX_SYSROOT=");
-    args.append(systemInfo.ISysRoot);
+    args.append(systemInfo.ISysRoot.string());
     args.push_back(' ');
   }
 

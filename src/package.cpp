@@ -57,7 +57,7 @@ std::filesystem::path packagePrefix(const std::filesystem::path &cxxPmHome, cons
     toolchainString.append(systemInfo.TargetSystemProcessor);
     if (!systemInfo.ISysRoot.empty()) {
       toolchainString.push_back('-');
-      toolchainString.append(systemInfo.ISysRoot);
+      toolchainString.append(systemInfo.ISysRoot.string());
     }
 
     packageIdString.append(package.Version);
@@ -289,7 +289,7 @@ void prepareBuildEnvironment(std::vector<std::string> &env,
                         bool verbose)
 {
   // Global settings
-  std::string args = "--package-root=";
+  std::string args = "--cxxpm-root=";
     args.append(globalSettings.PackageRoot.string());
   addEnv(env, "CXXPM_ARGS", args);
 
