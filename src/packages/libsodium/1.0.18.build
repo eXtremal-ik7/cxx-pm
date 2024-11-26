@@ -47,8 +47,8 @@ build() {
   else
     if [[ "${CXXPM_SYSTEM_NAME}" = "Darwin" && "${CXXPM_COMPILER_C_TYPE}" = "clang" ]]
     then
-      C_FLAGS="-arch ${CXXPM_CLANG_ARCH}"
-      CXX_FLAGS="-arch ${CXXPM_CLANG_ARCH}"
+      C_FLAGS="-arch ${CXXPM_CLANG_ARCH} -isysroot ${CXXPM_ISYSROOT}"
+      CXX_FLAGS="-arch ${CXXPM_CLANG_ARCH} -isysroot ${CXXPM_ISYSROOT}"
     fi
 
     cd ${CXXPM_BUILD_DIR}
