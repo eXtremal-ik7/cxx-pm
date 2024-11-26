@@ -15,6 +15,9 @@ build() {
     INSTALL_ON_WINDOWS="-DROCKSDB_INSTALL_ON_WINDOWS=OFF"
   fi
 
+  cd ${CXXPM_SOURCE_DIR}/rocksdb-${CXXPM_PACKAGE_VERSION}
+  patch -p1 < ${CXXPM_PACKAGE_DIR}/6.27.3-compilation-fix.patch
+
   cd ${CXXPM_BUILD_DIR}
   cmake \
     ${CXXPM_SOURCE_DIR}/rocksdb-${CXXPM_PACKAGE_VERSION} \

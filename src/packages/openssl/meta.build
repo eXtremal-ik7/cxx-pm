@@ -83,12 +83,12 @@ build-meta() {
 
   if [[ "${CXXPM_SYSTEM_NAME}" = "Windows" && "${CXXPM_SYSTEM_SUBTYPE}" = "msvc" ]]
   then
-    ${OPENSSL_PERL} ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} no-shared
+    ${OPENSSL_PERL} ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} no-shared no-tests
   elif [[ "${CXXPM_SYSTEM_NAME}" = "Darwin" ]]
   then
-    ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} CC=${CXXPM_COMPILER_C_COMMAND} no-shared "${ISYSROOT[@]}"
+    ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} CC=${CXXPM_COMPILER_C_COMMAND} no-shared no-tests "${ISYSROOT[@]}"
   else
-    ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} CC=${CXXPM_COMPILER_C_COMMAND} no-shared WINDRES=${CXXPM_TOOL_RC_COMMAND}
+    ./Configure ${OPENSSL_ARCH} --prefix=${CXXPM_INSTALL_DIR} ${BUILD_TYPE} CC=${CXXPM_COMPILER_C_COMMAND} no-shared no-tests WINDRES=${CXXPM_TOOL_RC_COMMAND}
   fi
 
   # Make & install
@@ -106,8 +106,8 @@ artifacts-meta() {
 echo $(cat <<-END
   [
     {"type": "include", "name": "OPENSSL_INCLUDE_DIRECTORY", "path": "include"},
-    {"type": "static_lib", "name": "OpenSSL::SSL", "path": "lib/${LIBRARY_PREFIX}ssl${CXXPM_STATIC_LIBRARY_SUFFIX}", "includes": ["OPENSSL_INCLUDE_DIRECTORY"]},
-    {"type": "static_lib", "name": "OpenSSL::Crypto", "path": "lib/${LIBRARY_PREFIX}crypto${CXXPM_STATIC_LIBRARY_SUFFIX}", "includes": ["OPENSSL_INCLUDE_DIRECTORY"]},
+    {"type": "static_lib", "name": "OpenSSL::SSL", "path": "${OPENSSL_LIB_DIRECTORY}/${LIBRARY_PREFIX}ssl${CXXPM_STATIC_LIBRARY_SUFFIX}", "includes": ["OPENSSL_INCLUDE_DIRECTORY"]},
+    {"type": "static_lib", "name": "OpenSSL::Crypto", "path": "${OPENSSL_LIB_DIRECTORY}/${LIBRARY_PREFIX}crypto${CXXPM_STATIC_LIBRARY_SUFFIX}", "includes": ["OPENSSL_INCLUDE_DIRECTORY"]},
     {"type": "libset", "name": "OPENSSL_LIBRARIES", "libs": ["OpenSSL::SSL", "OpenSSL::Crypto"]}
   ]
 END)
