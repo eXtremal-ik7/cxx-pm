@@ -65,6 +65,7 @@ add_executable(cxx-pm
   os.cpp
   sha3Tools.cpp
   ecdsa.cpp
+  version.cpp
   secp256k1/src/secp256k1.c
   secp256k1/src/precomputed_ecmult.c
   secp256k1/src/precomputed_ecmult_gen.c

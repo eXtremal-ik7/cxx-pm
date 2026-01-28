@@ -9,6 +9,7 @@
 #include "sha3Tools.h"
 #include "ecdsa.h"
 #include "manifest.h"
+#include "version.h"
 
 #ifdef WIN32
 #include <Windows.h>
@@ -163,6 +164,30 @@ bool loadSingleVariable(const std::filesystem::path &path, const std::string &na
   return !splitter.next();
 }
 
+std::vector<std::string> collectAvailableVersions(const CPackage &package)
+{
+  std::vector<std::string> versions;
+
+  auto scanDir = [&versions](const std::filesystem::path &dir) {
+    if (!std::filesystem::exists(dir))
+      return;
+    for (const auto &entry : std::filesystem::directory_iterator(dir)) {
+      std::string filename = entry.path().filename().string();
+      if (filename.size() > 6 && filename.substr(filename.size() - 6) == ".build") {
+        std::string version = filename.substr(0, filename.size() - 6);
+        if (version != "meta")
+          versions.push_back(version);
+      }
+    }
+  };
+
+  scanDir(package.Path);
+  for (const auto &extraPath : package.ExtraPath)
+    scanDir(extraPath);
+
+  return versions;
+}
+
 bool packageQueryVersion(CPackage &package, const std::string &requestedVersion, bool verbose)
 {
   // Load default version from meta build
@@ -174,6 +199,26 @@ bool packageQueryVersion(CPackage &package, const std::string &requestedVersion,
 
     if (verbose)
       printf("Default version for %s is %s\n", package.Name.c_str(), package.Version.c_str());
+  } else if (requestedVersion.find('*') != std::string::npos) {
+    // Wildcard version - find highest matching
+    std::vector<std::string> available = collectAvailableVersions(package);
+    std::string bestVersion;
+
+    for (const auto &v : available) {
+      if (versionMatchesWildcard(v, requestedVersion)) {
+        if (bestVersion.empty() || compareVersions(v, bestVersion) > 0)
+          bestVersion = v;
+      }
+    }
+
+    if (bestVersion.empty()) {
+      fprintf(stderr, "ERROR: no version matching %s found for package %s\n", requestedVersion.c_str(), package.Name.c_str());
+      return false;
+    }
+
+    package.Version = bestVersion;
+    if (verbose)
+      printf("Selected version %s for pattern %s\n", bestVersion.c_str(), requestedVersion.c_str());
   } else {
     package.Version = requestedVersion;
   }
