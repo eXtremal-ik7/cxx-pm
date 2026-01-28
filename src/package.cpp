@@ -1,7 +1,7 @@
 #include "package.h"
 #include "cxx-pm.h"
 #include "os.h"
-#include "sha3.h"
+#include "sha3Tools.h"
 #include "strExtras.h"
 #include "bs/autotools.h"
 #include "bs/cmake.h"

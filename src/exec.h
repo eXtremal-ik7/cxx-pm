@@ -26,20 +26,22 @@ bool run(const std::filesystem::path &workingDirectory,
 	     std::filesystem::path &fullPath,
 	     std::string &stdOut,
 	     std::string &stdErr,
-	     bool executableMustExists);
+	     bool executableMustExists,
+	     bool printCommand = false);
 
 bool runCaptureLog(const std::filesystem::path &workingDirectory,
 	               const std::filesystem::path &path,
 	               const std::vector<std::string> &arguments,
-	               const std::vector<std::string> &environmentVariables, 
+	               const std::vector<std::string> &environmentVariables,
 	               FILE *log,
 	               bool executableMustExists);
 
-bool runNoCapture(const std::filesystem::path &workingDirectory, 
-	              const std::filesystem::path &path, 
+bool runNoCapture(const std::filesystem::path &workingDirectory,
+	              const std::filesystem::path &path,
 	              const std::vector<std::string> &arguments,
 	              const std::vector<std::string> &environmentVariables,
-	              bool executableMustExists);
+	              bool executableMustExists,
+	              bool printCommand = false);
 
 #ifdef WIN32
 void terminateAllChildProcess();

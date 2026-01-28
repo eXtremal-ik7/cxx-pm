@@ -1,3 +1,0 @@
-DEFAULT_VERSION="9999-msvc"
-PACKAGE_TYPE="source"
-LANGS="C,C++"

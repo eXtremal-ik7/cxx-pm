@@ -1,8 +1,4 @@
 #include "cxx-pm-config.h"
-extern "C" {
-#include "tiny_sha3.h"
-}
-
 #include "cxx-pm.h"
 #include "exec.h"
 #include "strExtras.h"
@@ -10,7 +6,7 @@ extern "C" {
 #include "bs/cmake.h"
 #include "os.h"
 #include "package.h"
-#include "sha3.h"
+#include "sha3Tools.h"
 
 #ifdef WIN32
 #include <Windows.h>
@@ -56,14 +52,17 @@ enum CmdLineOptsTy {
   clOptPackageExtraDirectory,
   clOptFile,
   clOptVerbose,
-  clOptVersion
+  clOptVersion,
+  clOptUpdate,
+  clOptRepository
 };
 
 enum EModeTy {
   ENoMode = 0,
   EPackageList,
   ESearchPath,
-  EInstall
+  EInstall,
+  EUpdate
 };
 
 static option cmdLineOpts[] = {
@@ -87,6 +86,8 @@ static option cmdLineOpts[] = {
   {"install", required_argument, nullptr, clOptInstall},
   {"export-cmake", required_argument, nullptr, clOptExportCMake},
   {"version", no_argument, nullptr, clOptVersion},
+  {"update", no_argument, nullptr, clOptUpdate},
+  {"repository", required_argument, nullptr, clOptRepository},
   // extra parameters
   {"package-version", required_argument, nullptr, clOptPackageVersion},
   {"package-extra-dir", required_argument, nullptr, clOptPackageExtraDirectory},
@@ -687,6 +688,183 @@ std::filesystem::path searchPath(const std::filesystem::path& prefix, const std:
 
 
 
+void packageList(const std::filesystem::path &cxxpmRoot,
+                 const std::vector<std::filesystem::path> &extraPackageDirs,
+                 const std::map<std::string, CPackage> &packages)
+{
+  puts("Package repositories:");
+  printf("  %s\n", (cxxpmRoot / "packages").string().c_str());
+  for (const auto &dir : extraPackageDirs)
+    printf("  %s\n", dir.string().c_str());
+
+  puts("\nAvailable packages:");
+  for (const auto &[name, package] : packages)
+    printf("  %s\n", name.c_str());
+}
+
+bool verifyManifest(const std::filesystem::path &dir)
+{
+  static const char *MANIFEST_FILENAME = "MANIFEST";
+  std::filesystem::path manifestPath = dir / MANIFEST_FILENAME;
+
+  if (!std::filesystem::exists(manifestPath)) {
+    fprintf(stderr, "ERROR: MANIFEST not found in %s\n", dir.string().c_str());
+    return false;
+  }
+
+  // Read manifest
+  std::map<std::string, std::string> expectedEntries;
+  std::ifstream manifest(manifestPath);
+  std::string line;
+  while (std::getline(manifest, line)) {
+    size_t spacePos = line.find(' ');
+    if (spacePos == std::string::npos || spacePos == 0) {
+      fprintf(stderr, "ERROR: invalid MANIFEST format\n");
+      return false;
+    }
+    std::string name = line.substr(0, spacePos);
+    std::string hash = line.substr(spacePos + 1);
+    expectedEntries[name] = hash;
+  }
+
+  // Collect actual entries (excluding .git and MANIFEST)
+  std::set<std::string> actualEntries;
+  for (const auto &entry : std::filesystem::directory_iterator(dir)) {
+    std::string name = entry.path().filename().string();
+    if (name == ".git" || name == MANIFEST_FILENAME)
+      continue;
+    actualEntries.insert(name);
+  }
+
+  // Check for extra files
+  bool success = true;
+  for (const auto &name : actualEntries) {
+    if (expectedEntries.find(name) == expectedEntries.end()) {
+      fprintf(stderr, "ERROR: unexpected file/directory: %s\n", name.c_str());
+      success = false;
+    }
+  }
+
+  // Check for missing files and verify hashes
+  for (const auto &[name, expectedHash] : expectedEntries) {
+    std::filesystem::path entryPath = dir / name;
+    if (!std::filesystem::exists(entryPath)) {
+      fprintf(stderr, "ERROR: missing: %s\n", name.c_str());
+      success = false;
+      continue;
+    }
+
+    std::string actualHash;
+    if (std::filesystem::is_directory(entryPath))
+      actualHash = sha3DirectoryHash(entryPath, MANIFEST_FILENAME);
+    else
+      actualHash = sha3FileHash(entryPath);
+
+    if (actualHash != expectedHash) {
+      fprintf(stderr, "ERROR: hash mismatch for %s\n", name.c_str());
+      fprintf(stderr, "  expected: %s\n", expectedHash.c_str());
+      fprintf(stderr, "  actual:   %s\n", actualHash.c_str());
+      success = false;
+    }
+  }
+
+  if (success)
+    puts("Manifest verification passed");
+
+  return success;
+}
+
+bool updateRepository(const std::filesystem::path &cxxpmRoot, const std::string &expectedRepository)
+{
+  std::filesystem::path packagesDir = cxxpmRoot / "packages";
+  std::filesystem::path gitDir = packagesDir / ".git";
+
+  // Create packages directory if it doesn't exist
+  if (!std::filesystem::exists(packagesDir)) {
+    printf("Creating directory %s\n", packagesDir.string().c_str());
+    if (!std::filesystem::create_directories(packagesDir)) {
+      fprintf(stderr, "ERROR: failed to create directory %s\n", packagesDir.string().c_str());
+      return false;
+    }
+  }
+
+  // Clone if .git doesn't exist
+  if (!std::filesystem::exists(gitDir)) {
+    printf("Cloning repository to %s\n", packagesDir.string().c_str());
+    if (!runNoCapture(packagesDir, "git", {"clone", expectedRepository, "."}, {}, true, true))
+      return false;
+    return verifyManifest(packagesDir);
+  }
+
+  // Update existing repository
+  printf("Updating repository at %s\n", packagesDir.string().c_str());
+
+  // Check current remote URL
+  std::filesystem::path fullPath;
+  std::string capturedOut;
+  std::string capturedErr;
+
+  if (!run(packagesDir, "git", {"remote", "get-url", "origin"}, {}, fullPath, capturedOut, capturedErr, true, true)) {
+    fprintf(stderr, "ERROR: failed to get remote URL\n");
+    if (!capturedErr.empty())
+      fprintf(stderr, "%s", capturedErr.c_str());
+    return false;
+  }
+
+  // Remove trailing newline
+  while (!capturedOut.empty() && (capturedOut.back() == '\n' || capturedOut.back() == '\r'))
+    capturedOut.pop_back();
+
+  printf("%s\n", capturedOut.c_str());
+
+  if (capturedOut != expectedRepository) {
+    fprintf(stderr, "ERROR: repository mismatch\n");
+    fprintf(stderr, "  current:  %s\n", capturedOut.c_str());
+    fprintf(stderr, "  expected: %s\n", expectedRepository.c_str());
+    return false;
+  }
+
+  if (!runNoCapture(packagesDir, "git", {"pull"}, {}, true, true))
+    return false;
+  return verifyManifest(packagesDir);
+}
+
+void printHelp()
+{
+  puts("Usage: cxx-pm [options]");
+  puts("Options:");
+  puts("  --help\t\t\tShow this help message");
+  puts("  --version\t\t\tShow version");
+  puts("  --verbose\t\t\tEnable verbose output");
+  puts("Modes:");
+  puts("  --package-list\t\tList available packages");
+  puts("  --install <package>\t\tInstall a package");
+  puts("  --search-path <package>\tGet package install path");
+  puts("  --update\t\t\tUpdate package repository");
+  puts("  --repository <url>\t\tRepository URL (for --update)");
+  puts("Compiler options:");
+  puts("  --compiler <lang:path>\tSet compiler path (e.g., cxx:/usr/bin/g++)");
+  puts("  --compiler-flags <lang:flags>");
+  puts("  --compiler-definitions <lang:defs>");
+  puts("  --use-flags <flags>");
+  puts("Build options:");
+  puts("  --build-type <type>\t\tBuild type (default: Release)");
+  puts("  --build-type-mapping <mapping>");
+  puts("  --system-name <name>\t\tTarget system name");
+  puts("  --system-processor <arch>\tTarget processor architecture");
+  puts("  --isysroot <path>\t\tSystem root path");
+  puts("Package options:");
+  puts("  --package-version <ver>\tSpecify package version");
+  puts("  --package-extra-dir <dir>\tAdditional package directory");
+  puts("  --export-cmake <path>\t\tExport CMake config");
+  puts("  --search-path-type <type>\tPath type (native, posix, windows)");
+  puts("  --file <name>\t\t\tSearch for file in package");
+  puts("Other:");
+  puts("  --cxxpm-root <path>\t\tSet cxx-pm root directory");
+  puts("  --vs-install-dir <path>\tVisual Studio install directory");
+  puts("  --vc-toolset <toolset>\tVC toolset version");
+}
+
 #ifdef WIN32
 BOOL WINAPI ctrlHandler(DWORD dwCtrlType)
 {
@@ -719,6 +897,7 @@ int main(int argc, char **argv)
   bool exportCmake = false;
   bool verbose = false;
   EPathType pathType = EPathType::Native;
+  std::string repository = "https://github.com/eXtremal-ik7/cxx-pm-repo";
   CContext context;
 
 #ifdef WIN32
@@ -771,6 +950,9 @@ int main(int argc, char **argv)
         context.SystemInfo.VCToolSet = optarg;
         break;
       // modes
+      case clOptHelp :
+        printHelp();
+        exit(0);
       case clOptVersion :
         printf("%s\n", CXXPM_VERSION);
         exit(0);
@@ -806,6 +988,17 @@ int main(int argc, char **argv)
         packageName = optarg;
         break;
       }
+      case clOptUpdate : {
+        if (mode != ENoMode) {
+          fprintf(stderr, "ERROR: mode already specified\n");
+          exit(1);
+        }
+        mode = EUpdate;
+        break;
+      }
+      case clOptRepository :
+        repository = optarg;
+        break;
       case clOptExportCMake : {
         exportCmake = true;
         outputPath = optarg;
@@ -870,6 +1063,13 @@ int main(int argc, char **argv)
     exit(1);
   }
 
+  // Handle update mode early, before loading packages
+  if (mode == EUpdate) {
+    if (!updateRepository(cxxpmRoot, repository))
+      return 1;
+    return 0;
+  }
+
   if (!std::filesystem::exists(cxxpmRoot / "packages")) {
     fprintf(stderr, "ERROR: path not exists: %s\n", (cxxpmRoot/"packages").string().c_str());
     exit(1);
@@ -931,8 +1131,11 @@ int main(int argc, char **argv)
   std::map<std::string, CPackage> packages;
   std::set<std::filesystem::path> visited;
   for (const auto &folder: std::filesystem::directory_iterator{cxxpmRoot / "packages"}) {
+    std::string name = folder.path().filename().string();
+    if (name.empty() || name[0] == '.')
+      continue;
     CPackage package;
-    package.Name = folder.path().filename().string();
+    package.Name = name;
     package.Path = folder.path();
     packages.insert(std::make_pair(package.Name, package));
   }
@@ -943,11 +1146,14 @@ int main(int argc, char **argv)
       exit(1);
     }
     for (const auto &folder: std::filesystem::directory_iterator{cxxpmRoot / "packages"}) {
-      auto It = packages.find(folder.path().filename().string());
+      std::string name = folder.path().filename().string();
+      if (name.empty() || name[0] == '.')
+        continue;
+      auto It = packages.find(name);
       if (It == packages.end()) {
         // New package found
         CPackage package;
-        package.Name = folder.path().filename().string();
+        package.Name = name;
         package.Path = folder.path();
         packages.insert(std::make_pair(package.Name, package));
       } else {
@@ -963,8 +1169,12 @@ int main(int argc, char **argv)
       exit(1);
     }
     case EPackageList : {
+      packageList(cxxpmRoot, extraPackageDirs, packages);
       break;
     }
+    case EUpdate :
+      // Handled earlier
+      break;
     case ESearchPath : {
       if (context.SystemInfo.BuildType.size() != 1) {
         fprintf(stderr, "ERROR: search path mode supports only single build type\n");

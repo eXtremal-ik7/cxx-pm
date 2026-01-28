@@ -90,6 +90,14 @@ void updatePath()
   gPathCache.update();
 }
 
+static void doPrintCommand(const std::filesystem::path &path, const std::vector<std::string> &arguments)
+{
+  printf("+ %s", path.string().c_str());
+  for (const auto &arg : arguments)
+    printf(" %s", arg.c_str());
+  printf("\n");
+}
+
 bool run(const std::filesystem::path &workingDirectory,
          const std::filesystem::path &path,
          const std::vector<std::string> &arguments,
@@ -97,8 +105,12 @@ bool run(const std::filesystem::path &workingDirectory,
          std::filesystem::path &fullPath,
          std::string &stdOut,
          std::string &stdErr,
-         bool executableMustExists)
+         bool executableMustExists,
+         bool printCommand)
 {
+  if (printCommand)
+    doPrintCommand(path, arguments);
+
   fullPath = path.is_absolute() ? path : gPathCache.get(path);
   if (fullPath.empty()) {
     if (executableMustExists)
@@ -405,8 +417,11 @@ bool runCaptureLog(const std::filesystem::path &workingDirectory, const std::fil
 #endif
 }
 
-bool runNoCapture(const std::filesystem::path &workingDirectory, const std::filesystem::path &path, const std::vector<std::string> &arguments, const std::vector<std::string> &environmentVariables, bool executableMustExists)
+bool runNoCapture(const std::filesystem::path &workingDirectory, const std::filesystem::path &path, const std::vector<std::string> &arguments, const std::vector<std::string> &environmentVariables, bool executableMustExists, bool printCommand)
 {
+  if (printCommand)
+    doPrintCommand(path, arguments);
+
   std::filesystem::path fullPath = path.is_absolute() ? path : gPathCache.get(path);
   if (fullPath.empty()) {
     if (executableMustExists)

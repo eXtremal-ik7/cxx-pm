@@ -1,5 +1,5 @@
-project(cxx-pm)
 cmake_minimum_required(VERSION 3.10)
+project(cxx-pm)
 
 function(__get_home_dir home)
   if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -22,6 +22,7 @@ if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif()
 
 set (CMAKE_CXX_STANDARD 17)
+option(FULL_BUILD "Build additional tools" OFF)
 option(MSYS2_PACKAGE_BUILD OFF)
 if (WIN32)
   set(MSYS2_PACKAGE_BUILD ON)
@@ -58,9 +59,9 @@ add_executable(cxx-pm
   exec.cpp
   package.cpp
   strExtras.cpp
-  tiny_sha3.c
+  sha3.c
   os.cpp
-  sha3.cpp
+  sha3Tools.cpp
   compilers/common.cpp
   compilers/gnu.cpp
   bs/autotools.cpp
@@ -71,6 +72,15 @@ add_executable(cxx-pm
 
 if (NOT MSVC)
   target_link_libraries(cxx-pm pthread)
+endif()
+
+if (FULL_BUILD)
+  add_executable(cxx-pm-manifestupdate
+    manifestupdate.cpp
+    sha3Tools.cpp
+    strExtras.cpp
+    sha3.c
+  )
 endif()
 
 if (MSYS2_PACKAGE_BUILD)
