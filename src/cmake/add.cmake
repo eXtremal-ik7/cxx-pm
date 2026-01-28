@@ -34,6 +34,12 @@ function(__cxxpm_prepare)
 endfunction()
 
 function(__cxxpm_install cxxpm name version configuration)
+  if (version)
+    set(PACKAGE_SPEC "${name}@${version}")
+  else()
+    set(PACKAGE_SPEC "${name}")
+  endif()
+
   execute_process(COMMAND ${cxxpm}
     ${CXXPM_VC_INSTALL_DIR_ARG}
     ${CXXPM_VC_TOOLSET_ARG}
@@ -43,8 +49,7 @@ function(__cxxpm_install cxxpm name version configuration)
     "--system-name=${CXXPM_SYSTEM_NAME}"
     "--system-processor=${CXXPM_SYSTEM_PROCESSOR}"
     "--build-type=${configuration}"
-    "--install=${name}"
-    "--package-version=${version}"
+    "--install=${PACKAGE_SPEC}"
     "--export-cmake=${CMAKE_CURRENT_BINARY_DIR}/${name}.cmake"
     RESULT_VARIABLE EXIT_CODE
     COMMAND_ECHO STDOUT)
