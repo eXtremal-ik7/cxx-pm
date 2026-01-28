@@ -1,6 +1,7 @@
 #include "sha3Tools.h"
 #include "ecdsa.h"
 #include "strExtras.h"
+#include "manifest.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -8,10 +9,7 @@
 #include <getopt.h>
 #include <stdio.h>
 
-static const char *gManifestFilename = "MANIFEST";
-static const char *gSignFilename = "SIGN";
-
-enum OptsTy {
+enum CmdLineOptsTy {
   optHelp = 1,
   optPrivateKey,
   optTarget
@@ -27,7 +25,7 @@ static option cmdLineOpts[] = {
 static std::string computeHash(const std::filesystem::path &path)
 {
   if (std::filesystem::is_directory(path))
-    return sha3DirectoryHash(path, gManifestFilename);
+    return sha3DirectoryHash(path, MANIFEST_FILENAME);
   else
     return sha3FileHash(path);
 }
@@ -38,7 +36,7 @@ std::string generateManifestContent(const std::filesystem::path &dir)
 
   for (const auto &entry : std::filesystem::directory_iterator(dir)) {
     std::string name = entry.path().filename().string();
-    if (name == gManifestFilename || name == gSignFilename || (!name.empty() && name[0] == '.'))
+    if (name == MANIFEST_FILENAME || name == SIGN_FILENAME || (!name.empty() && name[0] == '.'))
       continue;
     std::string hash = computeHash(entry.path());
     if (hash.empty()) {
@@ -131,7 +129,7 @@ int main(int argc, char **argv)
   if (content.empty())
     return 1;
 
-  std::filesystem::path manifestPath = dir / gManifestFilename;
+  std::filesystem::path manifestPath = dir / MANIFEST_FILENAME;
   std::ofstream manifestOut(manifestPath);
   if (!manifestOut) {
     fprintf(stderr, "ERROR: cannot open %s for writing\n", manifestPath.string().c_str());
@@ -162,7 +160,7 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  std::filesystem::path signPath = dir / gSignFilename;
+  std::filesystem::path signPath = dir / SIGN_FILENAME;
   std::ofstream signOut(signPath);
   if (!signOut) {
     fprintf(stderr, "ERROR: cannot open %s for writing\n", signPath.string().c_str());

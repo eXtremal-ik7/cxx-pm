@@ -99,5 +99,4 @@ if (MSYS2_PACKAGE_BUILD)
 endif()
 
 install(TARGETS cxx-pm DESTINATION .)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/packages DESTINATION .)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/cmake/add.cmake DESTINATION .)

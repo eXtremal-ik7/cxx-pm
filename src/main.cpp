@@ -8,6 +8,7 @@
 #include "package.h"
 #include "sha3Tools.h"
 #include "ecdsa.h"
+#include "manifest.h"
 
 #ifdef WIN32
 #include <Windows.h>
@@ -22,10 +23,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
-#include <optional>
 #include <set>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 
@@ -705,10 +703,8 @@ void packageList(const std::filesystem::path &cxxpmRoot,
 
 bool verifyManifest(const std::filesystem::path &dir)
 {
-  static const char *manifestFilename = "MANIFEST";
-  static const char *signFilename = "SIGN";
-  std::filesystem::path manifestPath = dir / manifestFilename;
-  std::filesystem::path signPath = dir / signFilename;
+  std::filesystem::path manifestPath = dir / MANIFEST_FILENAME;
+  std::filesystem::path signPath = dir / SIGN_FILENAME;
 
   if (!std::filesystem::exists(manifestPath)) {
     fprintf(stderr, "ERROR: MANIFEST not found in %s\n", dir.string().c_str());
@@ -759,7 +755,7 @@ bool verifyManifest(const std::filesystem::path &dir)
   std::set<std::string> actualEntries;
   for (const auto &entry : std::filesystem::directory_iterator(dir)) {
     std::string name = entry.path().filename().string();
-    if (name == ".git" || name == manifestFilename || name == signFilename)
+    if (name == ".git" || name == MANIFEST_FILENAME || name == SIGN_FILENAME)
       continue;
     actualEntries.insert(name);
   }
@@ -784,7 +780,7 @@ bool verifyManifest(const std::filesystem::path &dir)
 
     std::string actualHash;
     if (std::filesystem::is_directory(entryPath))
-      actualHash = sha3DirectoryHash(entryPath, manifestFilename);
+      actualHash = sha3DirectoryHash(entryPath, MANIFEST_FILENAME);
     else
       actualHash = sha3FileHash(entryPath);
 
@@ -1167,7 +1163,7 @@ int main(int argc, char **argv)
   std::set<std::filesystem::path> visited;
   for (const auto &folder: std::filesystem::directory_iterator{cxxpmRoot / "packages"}) {
     std::string name = folder.path().filename().string();
-    if (name.empty() || name[0] == '.')
+    if (name.empty() || name[0] == '.' || name == MANIFEST_FILENAME || name == SIGN_FILENAME)
       continue;
     CPackage package;
     package.Name = name;
@@ -1182,7 +1178,7 @@ int main(int argc, char **argv)
     }
     for (const auto &folder: std::filesystem::directory_iterator{cxxpmRoot / "packages"}) {
       std::string name = folder.path().filename().string();
-      if (name.empty() || name[0] == '.')
+      if (name.empty() || name[0] == '.' || name == MANIFEST_FILENAME || name == SIGN_FILENAME)
         continue;
       auto It = packages.find(name);
       if (It == packages.end()) {
