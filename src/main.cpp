@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -48,7 +49,6 @@ enum CmdLineOptsTy {
   clOptSearchPathType,
   clOptInstall,
   clOptExportCMake,
-  clOptPackageVersion,
   clOptPackageExtraDirectory,
   clOptFile,
   clOptVerbose,
@@ -80,7 +80,7 @@ static option cmdLineOpts[] = {
   {"cxxpm-root", required_argument, nullptr, clOptCxxpmRoot},
   // modes
   {"help", no_argument, nullptr, clOptHelp},
-  {"package-list", no_argument, nullptr, clOptPackageList},
+  {"package-list", optional_argument, nullptr, clOptPackageList},
   {"search-path", required_argument, nullptr, clOptSearchPath},
   {"search-path-type", required_argument, nullptr, clOptSearchPathType},
   {"install", required_argument, nullptr, clOptInstall},
@@ -89,7 +89,6 @@ static option cmdLineOpts[] = {
   {"update", no_argument, nullptr, clOptUpdate},
   {"repository", required_argument, nullptr, clOptRepository},
   // extra parameters
-  {"package-version", required_argument, nullptr, clOptPackageVersion},
   {"package-extra-dir", required_argument, nullptr, clOptPackageExtraDirectory},
   // arguments
   {"file", required_argument, nullptr, clOptFile},
@@ -147,9 +146,9 @@ bool loadSingleVariable(const std::filesystem::path &path, const std::string &na
 
   args = "set -e; source ";
   args.append(pathConvert(path, EPathType::Posix).string());
-  args.append("; echo $");
+  args.append("; echo \"$");
   args.append(name);
-  args.append(";");
+  args.append("\";");
 
   if (!run(path.parent_path(), "bash", {"-c", args}, {}, fullPath, capturedOut, capturedErr, true)) {
     if (!fullPath.empty())
@@ -190,39 +189,48 @@ std::vector<std::string> collectAvailableVersions(const CPackage &package)
 
 bool packageQueryVersion(CPackage &package, const std::string &requestedVersion, bool verbose)
 {
+  std::string version = requestedVersion;
+
   // Load default version from meta build
-  if (requestedVersion.empty() || requestedVersion == "default") {
-    if (!loadSingleVariable(package.Path / "meta.build", "DEFAULT_VERSION", package.Version)) {
+  if (version.empty() || version == "default") {
+    if (!loadSingleVariable(package.Path / "meta.build", "DEFAULT_VERSION", version)) {
       fprintf(stderr, "ERROR: can't load DEFAULT_VERSION from %s\n", (package.Path / "meta.build").string().c_str());
       return false;
     }
 
+    // Protect against recursion
+    if (version == "default") {
+      fprintf(stderr, "ERROR: DEFAULT_VERSION cannot be 'default' in %s\n", (package.Path / "meta.build").string().c_str());
+      return false;
+    }
+
     if (verbose)
-      printf("Default version for %s is %s\n", package.Name.c_str(), package.Version.c_str());
-  } else if (requestedVersion.find('*') != std::string::npos) {
-    // Wildcard version - find highest matching
+      printf("Default version for %s is %s\n", package.Name.c_str(), version.c_str());
+  }
+
+  // Resolve wildcard version
+  if (version.find('*') != std::string::npos) {
     std::vector<std::string> available = collectAvailableVersions(package);
     std::string bestVersion;
 
     for (const auto &v : available) {
-      if (versionMatchesWildcard(v, requestedVersion)) {
+      if (versionMatchesWildcard(v, version)) {
         if (bestVersion.empty() || compareVersions(v, bestVersion) > 0)
           bestVersion = v;
       }
     }
 
     if (bestVersion.empty()) {
-      fprintf(stderr, "ERROR: no version matching %s found for package %s\n", requestedVersion.c_str(), package.Name.c_str());
+      fprintf(stderr, "ERROR: no version matching %s found for package %s\n", version.c_str(), package.Name.c_str());
       return false;
     }
 
-    package.Version = bestVersion;
     if (verbose)
-      printf("Selected version %s for pattern %s\n", bestVersion.c_str(), requestedVersion.c_str());
-  } else {
-    package.Version = requestedVersion;
+      printf("Selected version %s for pattern %s\n", bestVersion.c_str(), version.c_str());
+    version = bestVersion;
   }
 
+  package.Version = version;
   return true;
 }
 
@@ -616,29 +624,50 @@ bool install(CContext &context, std::map<std::string, CPackage> &allPackages, CP
   {
     std::string dependsVariable;
     if (loadSingleVariable(package.BuildFile, "DEPENDS", dependsVariable) && !dependsVariable.empty()) {
-      std::vector<std::string> depends;
-      // TEMPORARY!
-      // TODO: correctly parse depends
       StringSplitter splitter(dependsVariable, "\r\n ");
       while (splitter.next()) {
         std::string d(splitter.get());
+
+        // Parse package@version format
+        std::string dependName;
+        std::string dependVersion;
+        size_t atPos = d.find('@');
+        if (atPos != std::string::npos) {
+          dependName = d.substr(0, atPos);
+          dependVersion = d.substr(atPos + 1);
+        } else {
+          dependName = d;
+        }
+
         // search package
-        auto It = allPackages.find(d);
+        auto It = allPackages.find(dependName);
         if (It == allPackages.end()) {
-          fprintf(stderr, "ERROR: %s depends on non-existent package %s\n", package.Name.c_str(), d.c_str());
+          fprintf(stderr, "ERROR: %s depends on non-existent package %s\n", package.Name.c_str(), dependName.c_str());
           return false;
         }
 
         auto &dependPackage = It->second;
-        // TODO: get version from DEPENDS
-        if (!inspectPackage(context, dependPackage, std::string(), verbose))
+        if (!inspectPackage(context, dependPackage, dependVersion, verbose))
           return false;
         if (!searchCompilers(dependPackage.Languages, context.Compilers, context.Tools, context.SystemInfo, verbose))
           return false;
         updatePackagePrefix(context, dependPackage, buildType, verbose);
 
-        if (!install(context, allPackages, dependPackage, buildType, verbose, externalPrefix.empty() ? package.Prefix : externalPrefix))
+        if (!install(context, allPackages, dependPackage, buildType, verbose))
           return false;
+      }
+
+      // Recreate source/build directories after installing dependencies
+      // (they may have been cleaned up by dependency builds)
+      if (!package.IsBinary) {
+        if (!std::filesystem::exists(sourceDir) && !std::filesystem::create_directories(sourceDir)) {
+          fprintf(stderr, "ERROR: can't create directory at %s\n", sourceDir.string().c_str());
+          return false;
+        }
+        if (!std::filesystem::exists(buildDir) && !std::filesystem::create_directories(buildDir)) {
+          fprintf(stderr, "ERROR: can't create directory at %s\n", buildDir.string().c_str());
+          return false;
+        }
       }
     }
   }
@@ -744,6 +773,27 @@ void packageList(const std::filesystem::path &cxxpmRoot,
   puts("\nAvailable packages:");
   for (const auto &[name, package] : packages)
     printf("  %s\n", name.c_str());
+}
+
+void packageVersionList(const CPackage &package)
+{
+  std::vector<std::string> versions = collectAvailableVersions(package);
+
+  // Sort versions
+  std::sort(versions.begin(), versions.end(), [](const std::string &a, const std::string &b) {
+    return compareVersions(a, b) > 0;
+  });
+
+  // Load default version
+  std::string defaultVersion;
+  if (!loadSingleVariable(package.Path / "meta.build", "DEFAULT_VERSION", defaultVersion))
+    defaultVersion = "(unknown)";
+
+  printf("Package: %s\n", package.Name.c_str());
+  printf("Default version: %s\n", defaultVersion.c_str());
+  puts("\nAvailable versions:");
+  for (const auto &v : versions)
+    printf("  %s\n", v.c_str());
 }
 
 bool verifyManifest(const std::filesystem::path &dir)
@@ -913,9 +963,10 @@ void printHelp()
   puts("  --version\t\t\tShow version");
   puts("  --verbose\t\t\tEnable verbose output");
   puts("Modes:");
-  puts("  --package-list\t\tList available packages");
-  puts("  --install <package>\t\tInstall a package");
-  puts("  --search-path <package>\tGet package install path");
+  puts("  --package-list [package]\tList available packages or versions");
+  puts("  --install <package[@version]>\tInstall a package");
+  puts("  --search-path <package[@version]>");
+  puts("  \t\t\t\tGet package install path");
   puts("  --update\t\t\tUpdate package repository");
   puts("  --repository <url>\t\tRepository URL (for --update)");
   puts("Compiler options:");
@@ -930,7 +981,6 @@ void printHelp()
   puts("  --system-processor <arch>\tTarget processor architecture");
   puts("  --isysroot <path>\t\tSystem root path");
   puts("Package options:");
-  puts("  --package-version <ver>\tSpecify package version");
   puts("  --package-extra-dir <dir>\tAdditional package directory");
   puts("  --export-cmake <path>\t\tExport CMake config");
   puts("  --search-path-type <type>\tPath type (native, posix, windows)");
@@ -1038,6 +1088,8 @@ int main(int argc, char **argv)
           exit(1);
         }
         mode = EPackageList;
+        if (optarg)
+          packageName = optarg;
         break;
       case clOptSearchPath :
         if (mode != ENoMode) {
@@ -1045,7 +1097,16 @@ int main(int argc, char **argv)
           exit(1);
         }
         mode = ESearchPath;
-        packageName = optarg;
+        {
+          std::string arg = optarg;
+          size_t atPos = arg.find('@');
+          if (atPos != std::string::npos) {
+            packageName = arg.substr(0, atPos);
+            packageVersion = arg.substr(atPos + 1);
+          } else {
+            packageName = arg;
+          }
+        }
         break;
       case clOptSearchPathType : {
         pathType = pathTypeFromString(optarg);
@@ -1061,7 +1122,16 @@ int main(int argc, char **argv)
           exit(1);
         }
         mode = EInstall;
-        packageName = optarg;
+        {
+          std::string arg = optarg;
+          size_t atPos = arg.find('@');
+          if (atPos != std::string::npos) {
+            packageName = arg.substr(0, atPos);
+            packageVersion = arg.substr(atPos + 1);
+          } else {
+            packageName = arg;
+          }
+        }
         break;
       }
       case clOptUpdate : {
@@ -1078,10 +1148,6 @@ int main(int argc, char **argv)
       case clOptExportCMake : {
         exportCmake = true;
         outputPath = optarg;
-        break;
-      }
-      case clOptPackageVersion : {
-        packageVersion = optarg;
         break;
       }
       case clOptPackageExtraDirectory :
@@ -1245,7 +1311,16 @@ int main(int argc, char **argv)
       exit(1);
     }
     case EPackageList : {
-      packageList(cxxpmRoot, extraPackageDirs, packages);
+      if (packageName.empty()) {
+        packageList(cxxpmRoot, extraPackageDirs, packages);
+      } else {
+        const auto It = packages.find(packageName);
+        if (It == packages.end()) {
+          fprintf(stderr, "ERROR: unknown package: %s\n", packageName.c_str());
+          return 1;
+        }
+        packageVersionList(It->second);
+      }
       break;
     }
     case EUpdate :
