@@ -37,6 +37,8 @@ configure_file(
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1/src
 )
 
 if (MSVC)
@@ -62,6 +64,10 @@ add_executable(cxx-pm
   sha3.c
   os.cpp
   sha3Tools.cpp
+  ecdsa.cpp
+  secp256k1/src/secp256k1.c
+  secp256k1/src/precomputed_ecmult.c
+  secp256k1/src/precomputed_ecmult_gen.c
   compilers/common.cpp
   compilers/gnu.cpp
   bs/autotools.cpp
@@ -80,6 +86,10 @@ if (FULL_BUILD)
     sha3Tools.cpp
     strExtras.cpp
     sha3.c
+    ecdsa.cpp
+    secp256k1/src/secp256k1.c
+    secp256k1/src/precomputed_ecmult.c
+    secp256k1/src/precomputed_ecmult_gen.c
   )
 endif()
 

@@ -7,6 +7,7 @@
 #include "os.h"
 #include "package.h"
 #include "sha3Tools.h"
+#include "ecdsa.h"
 
 #ifdef WIN32
 #include <Windows.h>
@@ -704,18 +705,45 @@ void packageList(const std::filesystem::path &cxxpmRoot,
 
 bool verifyManifest(const std::filesystem::path &dir)
 {
-  static const char *MANIFEST_FILENAME = "MANIFEST";
-  std::filesystem::path manifestPath = dir / MANIFEST_FILENAME;
+  static const char *manifestFilename = "MANIFEST";
+  static const char *signFilename = "SIGN";
+  std::filesystem::path manifestPath = dir / manifestFilename;
+  std::filesystem::path signPath = dir / signFilename;
 
   if (!std::filesystem::exists(manifestPath)) {
     fprintf(stderr, "ERROR: MANIFEST not found in %s\n", dir.string().c_str());
     return false;
   }
 
+  // Verify signature
+  if (std::filesystem::exists(signPath)) {
+    std::string manifestHash = sha3FileHash(manifestPath);
+    if (manifestHash.empty()) {
+      fprintf(stderr, "ERROR: failed to compute manifest hash\n");
+      return false;
+    }
+
+    std::ifstream signFile(signPath);
+    std::string signature;
+    std::getline(signFile, signature);
+
+    uint8_t hashBytes[32];
+    hex2bin(manifestHash.c_str(), 64, hashBytes);
+
+    if (!ecdsaVerify(hashBytes, signature)) {
+      fprintf(stderr, "ERROR: invalid manifest signature\n");
+      return false;
+    }
+    puts("Signature verified");
+  } else {
+    puts("WARNING: manifest is not signed (SIGN file missing)");
+  }
+
   // Read manifest
   std::map<std::string, std::string> expectedEntries;
   std::ifstream manifest(manifestPath);
   std::string line;
+
   while (std::getline(manifest, line)) {
     size_t spacePos = line.find(' ');
     if (spacePos == std::string::npos || spacePos == 0) {
@@ -727,11 +755,11 @@ bool verifyManifest(const std::filesystem::path &dir)
     expectedEntries[name] = hash;
   }
 
-  // Collect actual entries (excluding .git and MANIFEST)
+  // Collect actual entries (excluding .git, MANIFEST, SIGN)
   std::set<std::string> actualEntries;
   for (const auto &entry : std::filesystem::directory_iterator(dir)) {
     std::string name = entry.path().filename().string();
-    if (name == ".git" || name == MANIFEST_FILENAME)
+    if (name == ".git" || name == manifestFilename || name == signFilename)
       continue;
     actualEntries.insert(name);
   }
@@ -756,7 +784,7 @@ bool verifyManifest(const std::filesystem::path &dir)
 
     std::string actualHash;
     if (std::filesystem::is_directory(entryPath))
-      actualHash = sha3DirectoryHash(entryPath, MANIFEST_FILENAME);
+      actualHash = sha3DirectoryHash(entryPath, manifestFilename);
     else
       actualHash = sha3FileHash(entryPath);
 
@@ -790,6 +818,13 @@ bool updateRepository(const std::filesystem::path &cxxpmRoot, const std::string 
 
   // Clone if .git doesn't exist
   if (!std::filesystem::exists(gitDir)) {
+    // Check if directory is not empty
+    if (!std::filesystem::is_empty(packagesDir)) {
+      fprintf(stderr, "ERROR: %s is not empty but has no .git directory\n", packagesDir.string().c_str());
+      fprintf(stderr, "Please remove the directory and try again:\n");
+      fprintf(stderr, "  rm -rf %s\n", packagesDir.string().c_str());
+      return false;
+    }
     printf("Cloning repository to %s\n", packagesDir.string().c_str());
     if (!runNoCapture(packagesDir, "git", {"clone", expectedRepository, "."}, {}, true, true))
       return false;
