@@ -10,6 +10,7 @@
 #include "ecdsa.h"
 #include "manifest.h"
 #include "version.h"
+#include "msys2db.h"
 
 #ifdef WIN32
 #include <Windows.h>
@@ -54,7 +55,8 @@ enum CmdLineOptsTy {
   clOptVerbose,
   clOptVersion,
   clOptUpdate,
-  clOptRepository
+  clOptRepository,
+  clOptInstallMsys2
 };
 
 enum EModeTy {
@@ -62,7 +64,8 @@ enum EModeTy {
   EPackageList,
   ESearchPath,
   EInstall,
-  EUpdate
+  EUpdate,
+  EInstallMsys2
 };
 
 static option cmdLineOpts[] = {
@@ -88,6 +91,7 @@ static option cmdLineOpts[] = {
   {"version", no_argument, nullptr, clOptVersion},
   {"update", no_argument, nullptr, clOptUpdate},
   {"repository", required_argument, nullptr, clOptRepository},
+  {"install-msys2", optional_argument, nullptr, clOptInstallMsys2},
   // extra parameters
   {"package-extra-dir", required_argument, nullptr, clOptPackageExtraDirectory},
   // arguments
@@ -1013,6 +1017,7 @@ void printHelp()
   puts("  \t\t\t\tGet package install path");
   puts("  --update\t\t\tUpdate package repository");
   puts("  --repository <url>\t\tRepository URL (for --update)");
+  puts("  --install-msys2 [packages]\tInstall msys2 packages (comma-separated)");
   puts("Compiler options:");
   puts("  --compiler <lang:path>\tSet compiler path (e.g., cxx:/usr/bin/g++)");
   puts("  --compiler-flags <lang:flags>");
@@ -1068,6 +1073,7 @@ int main(int argc, char **argv)
   bool verbose = false;
   EPathType pathType = EPathType::Native;
   std::string repository = "https://github.com/eXtremal-ik7/cxx-pm-repo";
+  std::vector<std::string> msys2PackageNames;
   CContext context;
 
 #ifdef WIN32
@@ -1186,6 +1192,27 @@ int main(int argc, char **argv)
         mode = EUpdate;
         break;
       }
+      case clOptInstallMsys2 : {
+        if (mode != ENoMode) {
+          fprintf(stderr, "ERROR: mode already specified\n");
+          exit(1);
+        }
+        mode = EInstallMsys2;
+        if (optarg) {
+          std::string arg = optarg;
+          size_t start = 0;
+          while (start < arg.size()) {
+            size_t comma = arg.find(',', start);
+            if (comma == std::string::npos)
+              comma = arg.size();
+            std::string name = arg.substr(start, comma - start);
+            if (!name.empty())
+              msys2PackageNames.push_back(name);
+            start = comma + 1;
+          }
+        }
+        break;
+      }
       case clOptRepository :
         repository = optarg;
         break;
@@ -1218,13 +1245,24 @@ int main(int argc, char **argv)
     fprintf(stderr, "ERROR: can't find self cxx-pm executable\n");
     return 1;
   }
+
+  if (cxxpmRoot.empty())
+    cxxpmRoot = userHomeDir() / ".cxxpm" / "self";
+
+  // Handle install-msys2 mode early, before msys2 bundle check
+  if (mode == EInstallMsys2) {
+    if (!msys2Install(cxxpmRoot, msys2PackageNames))
+      return 1;
+    return 0;
+  }
+
 #ifdef WIN32
   // Search msys2 bundle
   std::filesystem::path bashPath = context.SystemInfo.Self.parent_path() / "usr" / "bin" / "bash.exe";
   if (!std::filesystem::exists(bashPath)) {
     bashPath = userHomeDir() / ".cxxpm" / "self" / "usr" / "bin" / "bash.exe";
     if (!std::filesystem::exists(bashPath)) {
-      fprintf(stderr, "ERROR: msys2 bundle not found, installation error\n");
+      fprintf(stderr, "ERROR: msys2 bundle not found, run --install-msys2 first\n");
       return 1;
     }
   }
@@ -1240,9 +1278,6 @@ int main(int argc, char **argv)
   SetEnvironmentVariableW(L"PATH", path.c_str());
   updatePath();
 #endif
-
-  if (cxxpmRoot.empty())
-    cxxpmRoot = userHomeDir() / ".cxxpm" / "self";
 
   if (!std::filesystem::exists(cxxpmRoot)) {
     fprintf(stderr, "ERROR: path not exists: %s\n", cxxpmRoot.string().c_str());

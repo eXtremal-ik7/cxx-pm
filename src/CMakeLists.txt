@@ -23,10 +23,6 @@ endif()
 
 set (CMAKE_CXX_STANDARD 17)
 option(FULL_BUILD "Build additional tools" OFF)
-option(MSYS2_PACKAGE_BUILD OFF)
-if (WIN32)
-  set(MSYS2_PACKAGE_BUILD ON)
-endif()
 
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/CXXPM_VERSION CXXPM_VERSION)
 configure_file(
@@ -39,6 +35,7 @@ include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1/include
   ${CMAKE_CURRENT_SOURCE_DIR}/secp256k1/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/zstd
 )
 
 if (MSVC)
@@ -62,6 +59,7 @@ add_executable(cxx-pm
   package.cpp
   strExtras.cpp
   sha3.c
+  sha256.c
   base64.c
   os.cpp
   sha3Tools.cpp
@@ -75,11 +73,19 @@ add_executable(cxx-pm
   bs/autotools.cpp
   bs/cmake.cpp
   json/json11.cpp
+  zstd/zstddeclib.c
+  tar.cpp
+  msys2db.cpp
+  httpdownload.cpp
   ${SOURCES}
 )
 
 if (NOT MSVC)
   target_link_libraries(cxx-pm pthread)
+endif()
+
+if (WIN32)
+  target_link_libraries(cxx-pm winhttp)
 endif()
 
 if (FULL_BUILD)
@@ -96,10 +102,6 @@ if (FULL_BUILD)
   )
 endif()
 
-if (MSYS2_PACKAGE_BUILD)
-  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/msys2.cmake)
-  msys2_build()
-endif()
 
 install(TARGETS cxx-pm DESTINATION .)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/cmake/add.cmake DESTINATION .)

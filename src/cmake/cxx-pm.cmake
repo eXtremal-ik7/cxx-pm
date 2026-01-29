@@ -78,6 +78,19 @@ function(cxxpm_initialize url hash)
     endif()
   endif()
 
+  # Install msys2 runtime on Windows
+  if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+    get_property(CXXPM_MSYS2_INSTALLED GLOBAL PROPERTY CXXPM_MSYS2_INSTALLED)
+    if (NOT CXXPM_MSYS2_INSTALLED)
+      message("Installing msys2 packages...")
+      execute_process(COMMAND ${CXXPM_EXECUTABLE} "--install-msys2" RESULT_VARIABLE EXIT_CODE)
+      if (NOT (EXIT_CODE EQUAL 0))
+        message(FATAL_ERROR "cxx-pm --install-msys2 failed")
+      endif()
+      set_property(GLOBAL PROPERTY CXXPM_MSYS2_INSTALLED TRUE)
+    endif()
+  endif()
+
   # Update package repository once per configure
   get_property(CXXPM_UPDATED GLOBAL PROPERTY CXXPM_REPOSITORY_UPDATED)
   if (NOT CXXPM_UPDATED)
