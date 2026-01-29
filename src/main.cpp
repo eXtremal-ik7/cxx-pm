@@ -115,9 +115,9 @@ bool loadVariables(const std::filesystem::path &path, const std::vector<std::str
   args.append(pathConvert(path, EPathType::Posix).string());
   args.append("; ");
   for (const auto &v: names) {
-    args.append("echo $");
+    args.append("echo \"$");
     args.append(v);
-    args.append("@; ");
+    args.append("\"@; ");
   }
 
   if (!run(path.parent_path(), "bash", {"-c", args}, {}, fullPath, capturedOut, capturedErr, true)) {
@@ -148,7 +148,7 @@ bool loadSingleVariable(const std::filesystem::path &path, const std::string &na
   args.append(pathConvert(path, EPathType::Posix).string());
   args.append("; echo \"$");
   args.append(name);
-  args.append("\";");
+  args.append("\"@;");
 
   if (!run(path.parent_path(), "bash", {"-c", args}, {}, fullPath, capturedOut, capturedErr, true)) {
     if (!fullPath.empty())
@@ -156,11 +156,16 @@ bool loadSingleVariable(const std::filesystem::path &path, const std::string &na
     return false;
   }
 
-  unsigned counter = 0;
   StringSplitter splitter(capturedOut, "\r\n");
-  if (splitter.next())
-    variable = std::string(splitter.get());
-  return !splitter.next();
+  while (splitter.next()) {
+    auto v = splitter.get();
+    if (!v.empty() && v.back() == '@') {
+      variable = std::string(v.begin(), v.end()-1);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 std::vector<std::string> collectAvailableVersions(const CPackage &package)
@@ -668,6 +673,45 @@ bool install(CContext &context, std::map<std::string, CPackage> &allPackages, CP
           fprintf(stderr, "ERROR: can't create directory at %s\n", buildDir.string().c_str());
           return false;
         }
+      }
+    }
+  }
+
+  // Install binary depends (into the same install directory as this package)
+  {
+    std::string dependsBinaryVariable;
+    if (loadSingleVariable(package.BuildFile, "DEPENDS_BINARY", dependsBinaryVariable) && !dependsBinaryVariable.empty()) {
+      StringSplitter splitter(dependsBinaryVariable, "\r\n ");
+      while (splitter.next()) {
+        std::string d(splitter.get());
+
+        // Parse package@version format
+        std::string dependName;
+        std::string dependVersion;
+        size_t atPos = d.find('@');
+        if (atPos != std::string::npos) {
+          dependName = d.substr(0, atPos);
+          dependVersion = d.substr(atPos + 1);
+        } else {
+          dependName = d;
+        }
+
+        // search package
+        auto It = allPackages.find(dependName);
+        if (It == allPackages.end()) {
+          fprintf(stderr, "ERROR: %s depends on non-existent package %s\n", package.Name.c_str(), dependName.c_str());
+          return false;
+        }
+
+        auto &dependPackage = It->second;
+        if (!inspectPackage(context, dependPackage, dependVersion, verbose))
+          return false;
+        if (!searchCompilers(dependPackage.Languages, context.Compilers, context.Tools, context.SystemInfo, verbose))
+          return false;
+        updatePackagePrefix(context, dependPackage, buildType, verbose);
+
+        if (!install(context, allPackages, dependPackage, buildType, verbose, package.Prefix))
+          return false;
       }
     }
   }

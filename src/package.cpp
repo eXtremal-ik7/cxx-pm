@@ -288,6 +288,14 @@ void prepareBuildEnvironment(std::vector<std::string> &env,
                         const std::string &buildType,
                         bool verbose)
 {
+  // Use CMake-style paths on Windows (C:/Users/...) since MSYS2 path conversion is disabled
+  // On other platforms, Posix and CMake paths are the same
+#ifdef WIN32
+  const EPathType envPathType = EPathType::CMake;
+#else
+  const EPathType envPathType = EPathType::Posix;
+#endif
+
   // Global settings
   std::string args = "--cxxpm-root=";
     args.append(globalSettings.PackageRoot.string());
@@ -296,13 +304,13 @@ void prepareBuildEnvironment(std::vector<std::string> &env,
   addEnv(env, "CXXPM_NPROC", std::to_string(std::thread::hardware_concurrency()+1));
 
   // Toolchain settings
-  addEnv(env, "CXXPM_EXECUTABLE", pathConvert(systemInfo.Self, EPathType::Posix).string());
+  addEnv(env, "CXXPM_EXECUTABLE", pathConvert(systemInfo.Self, envPathType).string());
   addEnv(env, "CXXPM_SYSTEM_NAME", systemInfo.TargetSystemName);
   addEnv(env, "CXXPM_SYSTEM_PROCESSOR", systemInfo.TargetSystemProcessor);
   addEnv(env, "CXXPM_BUILD_TYPE", buildType);
   addEnv(env, "CXXPM_SYSTEM_SUBTYPE", systemInfo.TargetSystemSubType);
   addEnv(env, "CXXPM_MSVC_TOOLSET", systemInfo.VSToolSetVersion);
-  addEnv(env, "CXXPM_ISYSROOT", pathConvert(systemInfo.ISysRoot, EPathType::Posix).string());
+  addEnv(env, "CXXPM_ISYSROOT", pathConvert(systemInfo.ISysRoot, envPathType).string());
 
   // Compilers
   auto compilerEnvName = [](ELanguage lang, const std::string &envName) -> std::string {
@@ -315,7 +323,7 @@ void prepareBuildEnvironment(std::vector<std::string> &env,
 
   for (const ELanguage lang: package.Languages) {
     const CCompilerInfo &info = compilers[static_cast<size_t>(lang)];
-    addEnv(env, compilerEnvName(lang, "COMMAND"), pathConvert(info.Command, EPathType::Posix).string());
+    addEnv(env, compilerEnvName(lang, "COMMAND"), pathConvert(info.Command, envPathType).string());
     addEnv(env, compilerEnvName(lang, "TYPE"), compilerTypeToString(info.Type));
   }
 
@@ -330,7 +338,7 @@ void prepareBuildEnvironment(std::vector<std::string> &env,
 
   for (size_t i = 1, ie = static_cast<size_t>(EToolType::NumberOf); i != ie; ++i) {
     const CToolInfo &info = tools[i];
-    addEnv(env, toolEnvName(static_cast<EToolType>(i), "COMMAND"), pathConvert(info.Command, EPathType::Posix).string());
+    addEnv(env, toolEnvName(static_cast<EToolType>(i), "COMMAND"), pathConvert(info.Command, envPathType).string());
   }
 
   // Build systems
@@ -343,13 +351,20 @@ void prepareBuildEnvironment(std::vector<std::string> &env,
   addAutotoolsEnv(env, package, compilers, tools, systemInfo, buildType);
 #ifdef WIN32
   addEnv(env, "CXXPM_MSVC_ARCH", getVsArch(systemInfo.TargetSystemProcessor));
+  addEnv(env, "MSYS2_ARG_CONV_EXCL", "*");
+  if (systemInfo.TargetSystemSubType == "msvc")
+    addEnv(env, "CXXPM_CMAKE_BUILD_PARALLEL", "");
+  else
+    addEnv(env, "CXXPM_CMAKE_BUILD_PARALLEL", "-j" + std::to_string(std::thread::hardware_concurrency()+1));
+#else
+  addEnv(env, "CXXPM_CMAKE_BUILD_PARALLEL", "-j" + std::to_string(std::thread::hardware_concurrency()+1));
 #endif
 
   // Directories
-  addEnv(env, "CXXPM_SOURCE_DIR", pathConvert(globalSettings.HomeDir / ".s", EPathType::Posix).string());
-  addEnv(env, "CXXPM_BUILD_DIR", pathConvert(globalSettings.HomeDir / ".b", EPathType::Posix).string());
-  addEnv(env, "CXXPM_INSTALL_DIR", pathConvert(package.Prefix / "install", EPathType::Posix).string());
-  addEnv(env, "CXXPM_PACKAGE_DIR", pathConvert(package.BuildFile.parent_path(), EPathType::Posix).string());
+  addEnv(env, "CXXPM_SOURCE_DIR", pathConvert(globalSettings.HomeDir / ".s", envPathType).string());
+  addEnv(env, "CXXPM_BUILD_DIR", pathConvert(globalSettings.HomeDir / ".b", envPathType).string());
+  addEnv(env, "CXXPM_INSTALL_DIR", pathConvert(package.Prefix / "install", envPathType).string());
+  addEnv(env, "CXXPM_PACKAGE_DIR", pathConvert(package.BuildFile.parent_path(), envPathType).string());
 
   // Package settings
   addEnv(env, "CXXPM_PACKAGE_VERSION", package.Version);

@@ -108,6 +108,8 @@ bool run(const std::filesystem::path &workingDirectory,
          bool executableMustExists,
          bool printCommand)
 {
+  fflush(stdout);
+  fflush(stderr);
   if (printCommand)
     doPrintCommand(path, arguments);
 
@@ -272,6 +274,8 @@ bool run(const std::filesystem::path &workingDirectory,
 
 bool runCaptureLog(const std::filesystem::path &workingDirectory, const std::filesystem::path &path, const std::vector<std::string> &arguments, const std::vector<std::string> &environmentVariables, FILE *log, bool executableMustExists)
 {
+  fflush(stdout);
+  fflush(stderr);
   std::filesystem::path fullPath = path.is_absolute() ? path : gPathCache.get(path);
   if (fullPath.empty()) {
     if (executableMustExists)
@@ -419,6 +423,8 @@ bool runCaptureLog(const std::filesystem::path &workingDirectory, const std::fil
 
 bool runNoCapture(const std::filesystem::path &workingDirectory, const std::filesystem::path &path, const std::vector<std::string> &arguments, const std::vector<std::string> &environmentVariables, bool executableMustExists, bool printCommand)
 {
+  fflush(stdout);
+  fflush(stderr);
   if (printCommand)
     doPrintCommand(path, arguments);
 

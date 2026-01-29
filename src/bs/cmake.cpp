@@ -38,7 +38,7 @@ std::string cmakeGetMSVCConfigureArgs(const CPackage &package, const CompilersAr
   }
 
   args.append("-DCMAKE_GENERATOR_INSTANCE=\"");
-    args.append(pathConvert(std::filesystem::path(vsInstallDir), EPathType::Posix).string());
+    args.append(pathConvert(std::filesystem::path(vsInstallDir), EPathType::CMake).string());
     args.append("\" ");
 
   if (!systemInfo.VCToolSet.empty()) {
@@ -146,7 +146,11 @@ bool cmakeExport(const CPackage &package,
     prepareBuildEnvironment(env, package, globalSettings, systemInfo, compilers, tools, systemInfo.BuildType[i].MappedTo, verbose);
 
     args = "set -x; set -e; source ";
+#ifdef WIN32
+    args.append(pathConvert(package.BuildFile, EPathType::CMake).string());
+#else
     args.append(pathConvert(package.BuildFile, EPathType::Posix).string());
+#endif
     args.append("; artifacts;");
     std::filesystem::path fullPath;
     std::string capturedOut;
