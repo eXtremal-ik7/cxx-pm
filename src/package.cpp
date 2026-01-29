@@ -20,6 +20,7 @@ EArtifactType artifactTypeFromString(std::string_view type)
   if (type == "executable") return EArtifactType::Executable;
   if (type == "libset") return EArtifactType::LibSet;
   if (type == "cmake_module") return EArtifactType::CMakeModule;
+  if (type == "system_lib") return EArtifactType::SystemLibrary;
   return EArtifactType::Unknown;
 }
 
@@ -32,6 +33,7 @@ const char *artifactTypeToString(EArtifactType type)
     case EArtifactType::Executable : return "executable";
     case EArtifactType::LibSet : return "libset";
     case EArtifactType::CMakeModule : return "cmake_module";
+    case EArtifactType::SystemLibrary : return "system_lib";
     default: return "<unknown>";
   }
 }
@@ -214,6 +216,17 @@ bool CArtifact::loadFromJson(const json11::Json &json)
       break;
     }
 
+    case EArtifactType::SystemLibrary : {
+      if (json.object_items().count("system_name")) {
+        if (!json["system_name"].is_string()) {
+          fprintf(stderr, "ERROR: system_name must be a string\n");
+          return false;
+        }
+        SystemName = json["system_name"].string_value();
+      }
+      break;
+    }
+
     default:
       return false;
   }
@@ -271,6 +284,9 @@ bool CArtifact::merge(const CArtifact &artifact)
       }
       break;
     }
+
+    case EArtifactType::SystemLibrary :
+      break;
 
     default:
       return false;
@@ -341,6 +357,50 @@ void prepareBuildEnvironment(std::vector<std::string> &env,
     addEnv(env, toolEnvName(static_cast<EToolType>(i), "COMMAND"), pathConvert(info.Command, envPathType).string());
   }
 
+  // Search path args (for calling --search-path from build scripts)
+  {
+    std::string searchArgs = "(";
+    searchArgs.append("--system-name=");
+    searchArgs.append(systemInfo.TargetSystemName);
+    searchArgs.push_back(' ');
+    searchArgs.append("--system-processor=");
+    searchArgs.append(systemInfo.TargetSystemProcessor);
+    searchArgs.push_back(' ');
+
+    if (systemInfo.TargetSystemSubType == "msvc") {
+      if (!systemInfo.VCInstallDir.empty()) {
+        searchArgs.append("\"--vs-install-dir=");
+        searchArgs.append(pathConvert(systemInfo.VCInstallDir, envPathType).string());
+        searchArgs.append("\" ");
+      }
+      if (!systemInfo.VCToolSet.empty()) {
+        searchArgs.append("--vc-toolset=");
+        searchArgs.append(systemInfo.VCToolSet);
+        searchArgs.push_back(' ');
+      }
+    } else {
+      for (const ELanguage lang: package.Languages) {
+        const CCompilerInfo &info = compilers[static_cast<size_t>(lang)];
+        if (!info.Command.empty()) {
+          searchArgs.append("\"--compiler=");
+          searchArgs.append(languageToString(lang));
+          searchArgs.push_back(':');
+          searchArgs.append(pathConvert(info.Command, envPathType).string());
+          searchArgs.append("\" ");
+        }
+      }
+
+      if (!systemInfo.ISysRoot.empty()) {
+        searchArgs.append("\"--isysroot=");
+        searchArgs.append(pathConvert(systemInfo.ISysRoot, envPathType).string());
+        searchArgs.append("\" ");
+      }
+    }
+
+    searchArgs.push_back(')');
+    addEnv(env, "CXXPM_SEARCH_PATH_ARGS", searchArgs);
+  }
+
   // Build systems
   // cmake
   std::string cmakeConfigureArgs = cmakeGetConfigureArgs(package, compilers, tools, systemInfo, buildType);
@@ -350,6 +410,8 @@ void prepareBuildEnvironment(std::vector<std::string> &env,
   // autotools
   addAutotoolsEnv(env, package, compilers, tools, systemInfo, buildType);
 #ifdef WIN32
+  addEnv(env, "CXXPM_VS_INSTALL_DIR", pathConvert(systemInfo.VCInstallDir, envPathType).string());
+  addEnv(env, "CXXPM_VC_TOOLSET", systemInfo.VCToolSet);
   addEnv(env, "CXXPM_MSVC_ARCH", getVsArch(systemInfo.TargetSystemProcessor));
   addEnv(env, "MSYS2_ARG_CONV_EXCL", "*");
   if (systemInfo.TargetSystemSubType == "msvc")

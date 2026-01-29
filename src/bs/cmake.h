@@ -9,4 +9,4 @@ struct CxxPmSettings;
 std::string cmakeGetConfigureArgs(const CPackage &package, const CompilersArray &compilers, const ToolsArray &tools, const CSystemInfo &systemInfo, const std::string &buildType);
 std::string cmakeGetBuildArgs(const CPackage &package, const CompilersArray &compilers, const ToolsArray &tools, const CSystemInfo &systemInfo, const std::string &buildType);
 
-bool cmakeExport(const CPackage &package, const CxxPmSettings &globalSettings, const CompilersArray &compilers, const ToolsArray &tools, const CSystemInfo &systemInfo, const std::filesystem::path &output, bool verbose);
+bool cmakeExport(const CPackage &package, const std::vector<CPackage> &dependencies, const CxxPmSettings &globalSettings, const CompilersArray &compilers, const ToolsArray &tools, const CSystemInfo &systemInfo, const std::filesystem::path &output, bool verbose);

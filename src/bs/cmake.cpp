@@ -119,26 +119,15 @@ std::string cmakeGetBuildArgs(const CPackage &package, const CompilersArray &com
   return std::string();
 }
 
-bool cmakeExport(const CPackage &package,
-                 const CxxPmSettings &globalSettings,
-                 const CompilersArray &compilers,
-                 const ToolsArray &tools,
-                 const CSystemInfo &systemInfo,
-                 const std::filesystem::path &output,
-                 bool verbose)
+static bool collectPackageArtifacts(const CPackage &package,
+                                    const CxxPmSettings &globalSettings,
+                                    const CompilersArray &compilers,
+                                    const ToolsArray &tools,
+                                    const CSystemInfo &systemInfo,
+                                    bool verbose,
+                                    std::vector<CArtifact> &artifacts,
+                                    std::vector<std::filesystem::path> &prefixes)
 {
-  std::ofstream generatedFile(output);
-  generatedFile << "# This is automatically generated file by cxx-pm\n";
-  generatedFile << "# Package name: " << package.Name << '\n';
-  generatedFile << "# Configurations: ";
-  for (const auto &buildType: systemInfo.BuildType)
-    generatedFile << buildType.Name << ';';
-  generatedFile << "\n\n";
-
-  std::vector<CArtifact> artifacts;
-  std::vector<std::filesystem::path> prefixes;
-  std::unordered_set<std::string> libSet;
-
   bool firstRun = true;
   for (size_t i = 0, ie = systemInfo.BuildType.size(); i != ie; ++i) {
     std::string args;
@@ -182,8 +171,6 @@ bool cmakeExport(const CPackage &package,
       }
 
       if (firstRun) {
-        if (a.Type == EArtifactType::SharedLibrary || a.Type == EArtifactType::StaticLibrary)
-          libSet.insert(a.Name);
         artifacts.emplace_back(std::move(a));
       } else {
         if (artIdx >= artifacts.size()) {
@@ -200,12 +187,20 @@ bool cmakeExport(const CPackage &package,
       artIdx++;
     }
 
-    // Calculate package prefix for current configuration
     prefixes.emplace_back(packagePrefix(globalSettings.HomeDir, package, compilers, systemInfo, systemInfo.BuildType[i].MappedTo, verbose));
     firstRun = false;
   }
 
-  // generate cmake file
+  return true;
+}
+
+static bool writeArtifactsCmake(std::ofstream &generatedFile,
+                                const std::vector<CArtifact> &artifacts,
+                                const std::vector<std::filesystem::path> &prefixes,
+                                const CSystemInfo &systemInfo,
+                                const std::unordered_set<std::string> &libSet,
+                                std::vector<std::string> &libraryTargets)
+{
   for (const auto &a: artifacts) {
     switch (a.Type) {
       case EArtifactType::IncludeDirectory : {
@@ -244,6 +239,7 @@ bool cmakeExport(const CPackage &package,
       case EArtifactType::SharedLibrary : {
         std::string libType = a.Type == EArtifactType::StaticLibrary ? "STATIC" : "SHARED";
         generatedFile << "add_library(" << a.Name << ' ' << libType << ' ' << "IMPORTED GLOBAL)\n";
+        libraryTargets.push_back(a.Name);
 
         if (systemInfo.BuildType.size() == 1) {
           auto libraryFile = a.Type == EArtifactType::SharedLibrary && systemInfo.TargetSystemName == "Windows" ?
@@ -448,8 +444,125 @@ bool cmakeExport(const CPackage &package,
         break;
       }
 
+      case EArtifactType::SystemLibrary :
+        // Handled below
+        break;
+
       default:
         break;
+    }
+  }
+
+  // Collect system libraries matching the target system
+  std::string sysLibList;
+  for (const auto &a : artifacts) {
+    if (a.Type != EArtifactType::SystemLibrary)
+      continue;
+    if (!a.SystemName.empty() && a.SystemName != systemInfo.TargetSystemName)
+      continue;
+    if (!sysLibList.empty())
+      sysLibList.push_back(';');
+    sysLibList.append(a.Name);
+  }
+
+  if (!sysLibList.empty()) {
+    for (const auto &lib : libraryTargets) {
+      generatedFile << "set_property(TARGET " << lib << " APPEND PROPERTY INTERFACE_LINK_LIBRARIES \"" << sysLibList << "\")\n";
+    }
+  }
+
+  return true;
+}
+
+static bool exportSinglePackage(const CPackage &package,
+                                const CxxPmSettings &globalSettings,
+                                const CompilersArray &compilers,
+                                const ToolsArray &tools,
+                                const CSystemInfo &systemInfo,
+                                const std::filesystem::path &output,
+                                bool verbose,
+                                std::vector<std::string> &libraryTargets)
+{
+  std::vector<CArtifact> artifacts;
+  std::vector<std::filesystem::path> prefixes;
+  if (!collectPackageArtifacts(package, globalSettings, compilers, tools, systemInfo, verbose, artifacts, prefixes))
+    return false;
+
+  std::unordered_set<std::string> libSet;
+  for (const auto &a : artifacts) {
+    if (a.Type == EArtifactType::SharedLibrary || a.Type == EArtifactType::StaticLibrary)
+      libSet.insert(a.Name);
+  }
+
+  std::ofstream generatedFile(output);
+  generatedFile << "# This is automatically generated file by cxx-pm\n";
+  generatedFile << "# Package name: " << package.Name << '\n';
+  generatedFile << "# Configurations: ";
+  for (const auto &buildType: systemInfo.BuildType)
+    generatedFile << buildType.Name << ';';
+  generatedFile << "\n\n";
+
+  // Include guard via GLOBAL property
+  std::string guardProp = "_CXXPM_";
+  for (char c : package.Name)
+    guardProp.push_back(toupper(static_cast<unsigned char>(c)));
+  guardProp.append("_INCLUDED");
+  generatedFile << "get_property(__included GLOBAL PROPERTY " << guardProp << ")\n";
+  generatedFile << "if(__included)\n";
+  generatedFile << "  return()\n";
+  generatedFile << "endif()\n";
+  generatedFile << "set_property(GLOBAL PROPERTY " << guardProp << " TRUE)\n\n";
+
+  if (!writeArtifactsCmake(generatedFile, artifacts, prefixes, systemInfo, libSet, libraryTargets))
+    return false;
+
+  return true;
+}
+
+bool cmakeExport(const CPackage &package,
+                 const std::vector<CPackage> &dependencies,
+                 const CxxPmSettings &globalSettings,
+                 const CompilersArray &compilers,
+                 const ToolsArray &tools,
+                 const CSystemInfo &systemInfo,
+                 const std::filesystem::path &output,
+                 bool verbose)
+{
+  std::filesystem::path outputDir = output.parent_path();
+
+  // Export each dependency into its own .cmake file
+  std::vector<std::string> depLibraryTargets;
+  for (const auto &dep : dependencies) {
+    std::filesystem::path depOutput = outputDir / (dep.Name + ".cmake");
+    std::vector<std::string> depLibs;
+    if (!exportSinglePackage(dep, globalSettings, compilers, tools, systemInfo, depOutput, verbose, depLibs))
+      return false;
+    depLibraryTargets.insert(depLibraryTargets.end(), depLibs.begin(), depLibs.end());
+  }
+
+  // Export main package
+  std::vector<std::string> mainLibraryTargets;
+  if (!exportSinglePackage(package, globalSettings, compilers, tools, systemInfo, output, verbose, mainLibraryTargets))
+    return false;
+
+  // Append include() and INTERFACE_LINK_LIBRARIES to main package file
+  std::ofstream generatedFile(output, std::ios::app);
+
+  // Include dependency cmake files
+  for (const auto &dep : dependencies) {
+    generatedFile << "include(${CMAKE_CURRENT_LIST_DIR}/" << dep.Name << ".cmake)\n";
+  }
+
+  // Link main package libraries to dependency libraries
+  if (!depLibraryTargets.empty()) {
+    std::string depList;
+    for (size_t i = 0; i < depLibraryTargets.size(); ++i) {
+      if (i > 0) depList.push_back(';');
+      depList.append(depLibraryTargets[i]);
+    }
+
+    for (const auto &lib : mainLibraryTargets) {
+      generatedFile << "set_property(TARGET " << lib << " APPEND PROPERTY INTERFACE_LINK_LIBRARIES \"" << depList << "\")\n";
     }
   }
 

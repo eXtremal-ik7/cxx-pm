@@ -27,7 +27,8 @@ enum class EArtifactType : unsigned {
   SharedLibrary,
   Executable,
   LibSet,
-  CMakeModule
+  CMakeModule,
+  SystemLibrary
 };
 
 EArtifactType artifactTypeFromString(std::string_view type);
@@ -38,6 +39,7 @@ struct CArtifact {
   std::string Name;
   std::vector<std::string> Libs;
   std::vector<std::string> IncludeLinks;
+  std::string SystemName;
 
   std::vector<std::filesystem::path> RelativePaths;
   std::vector<std::filesystem::path> DllPaths;

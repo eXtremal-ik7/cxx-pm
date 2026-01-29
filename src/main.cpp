@@ -439,23 +439,31 @@ bool downloadPackageFiles(const CContext& context,
     auto archiveFilePathPosix = pathConvert(archiveFilePath, EPathType::Posix);
     auto destinationPosix = pathConvert(destination, EPathType::Posix);
 
+#ifdef WIN32
+    // MSYS2 tar cannot create symlinks by default on Windows.
+    // winsymlinks:lnk tells the MSYS2 runtime to create .lnk shortcuts instead.
+    std::vector<std::string> tarEnv = {"MSYS=winsymlinks:lnk"};
+#else
+    std::vector<std::string> tarEnv;
+#endif
+
     if (endsWith(archiveFilePathPosix.string(), ".zip")) {
       if (!runNoCapture(".", "unzip", { archiveFilePathPosix.string(), "-d", destinationPosix.string()}, {}, true)) {
         fprintf(stderr, "Unpacking error\n");
         return false;
       }
     } else if (endsWith(archiveFilePathPosix.string(), ".tar.gz")) {
-      if (!runNoCapture(".", "tar", { "-xzf", archiveFilePathPosix.string(), "-C", destinationPosix.string() }, {}, true)) {
+      if (!runNoCapture(".", "tar", { "-xzf", archiveFilePathPosix.string(), "-C", destinationPosix.string() }, tarEnv, true)) {
         fprintf(stderr, "Unpacking error\n");
         return false;
       }
     } else if (endsWith(archiveFilePathPosix.string(), ".tar.bz2")) {
-      if (!runNoCapture(".", "tar", { "-xjf", archiveFilePathPosix.string(), "-C", destinationPosix.string() }, {}, true)) {
+      if (!runNoCapture(".", "tar", { "-xjf", archiveFilePathPosix.string(), "-C", destinationPosix.string() }, tarEnv, true)) {
         fprintf(stderr, "Unpacking error\n");
         return false;
       }
     } else if (endsWith(archiveFilePathPosix.string(), ".tar.lz") || endsWith(archiveFilePathPosix.string(), ".tar.lzma")) {
-        if (!runNoCapture(".", "tar", { "--lzip", "-xvf", archiveFilePathPosix.string(), "-C", destinationPosix.string() }, {}, true)) {
+        if (!runNoCapture(".", "tar", { "--lzip", "-xvf", archiveFilePathPosix.string(), "-C", destinationPosix.string() }, tarEnv, true)) {
           fprintf(stderr, "Unpacking error\n");
           return false;
         }
@@ -465,7 +473,7 @@ bool downloadPackageFiles(const CContext& context,
       std::filesystem::path tmpFilePathPosix = pathConvert(tmpFilePath, EPathType::Posix);
       bool success = true;
       if (!runNoCapture(".", "unzstd", { archiveFilePathPosix.string(), "-o", tmpFilePathPosix.string() }, {}, true) ||
-          !runNoCapture(".", "tar", { "-xf", tmpFilePathPosix.string(), "-C", destinationPosix.string() }, {}, true))
+          !runNoCapture(".", "tar", { "-xf", tmpFilePathPosix.string(), "-C", destinationPosix.string() }, tarEnv, true))
         success = false;
       std::error_code ec;
       std::filesystem::remove(tmpFilePath, ec);
@@ -520,6 +528,48 @@ static bool removeDirectory(const std::filesystem::path &path)
     fprintf(stderr, "ERROR: can't delete folder %s\n", path.string().c_str());
     return false;
 #endif
+  }
+
+  return true;
+}
+
+static bool collectDependencies(const std::filesystem::path &buildFile,
+                                const std::string &variable,
+                                const std::string &parentName,
+                                std::map<std::string, CPackage> &allPackages,
+                                CContext &context,
+                                bool verbose,
+                                std::vector<CPackage> &out)
+{
+  std::string value;
+  if (!loadSingleVariable(buildFile, variable, value) || value.empty())
+    return true;
+
+  StringSplitter splitter(value, "\r\n ");
+  while (splitter.next()) {
+    std::string d(splitter.get());
+    std::string dependName;
+    std::string dependVersion;
+    size_t atPos = d.find('@');
+    if (atPos != std::string::npos) {
+      dependName = d.substr(0, atPos);
+      dependVersion = d.substr(atPos + 1);
+    } else {
+      dependName = d;
+    }
+
+    auto It = allPackages.find(dependName);
+    if (It == allPackages.end()) {
+      fprintf(stderr, "ERROR: %s depends on non-existent package %s\n", parentName.c_str(), dependName.c_str());
+      return false;
+    }
+
+    CPackage depPkg = It->second;
+    if (!inspectPackage(context, depPkg, dependVersion, verbose))
+      return false;
+    if (!searchCompilers(depPkg.Languages, context.Compilers, context.Tools, context.SystemInfo, verbose))
+      return false;
+    out.push_back(std::move(depPkg));
   }
 
   return true;
@@ -631,92 +681,38 @@ bool install(CContext &context, std::map<std::string, CPackage> &allPackages, CP
 
   // Install depends
   {
-    std::string dependsVariable;
-    if (loadSingleVariable(package.BuildFile, "DEPENDS", dependsVariable) && !dependsVariable.empty()) {
-      StringSplitter splitter(dependsVariable, "\r\n ");
-      while (splitter.next()) {
-        std::string d(splitter.get());
+    std::vector<CPackage> deps;
+    if (!collectDependencies(package.BuildFile, "DEPENDS", package.Name, allPackages, context, verbose, deps))
+      return false;
+    for (auto &dep : deps) {
+      updatePackagePrefix(context, dep, buildType, verbose);
+      if (!install(context, allPackages, dep, buildType, verbose))
+        return false;
+    }
 
-        // Parse package@version format
-        std::string dependName;
-        std::string dependVersion;
-        size_t atPos = d.find('@');
-        if (atPos != std::string::npos) {
-          dependName = d.substr(0, atPos);
-          dependVersion = d.substr(atPos + 1);
-        } else {
-          dependName = d;
-        }
-
-        // search package
-        auto It = allPackages.find(dependName);
-        if (It == allPackages.end()) {
-          fprintf(stderr, "ERROR: %s depends on non-existent package %s\n", package.Name.c_str(), dependName.c_str());
-          return false;
-        }
-
-        auto &dependPackage = It->second;
-        if (!inspectPackage(context, dependPackage, dependVersion, verbose))
-          return false;
-        if (!searchCompilers(dependPackage.Languages, context.Compilers, context.Tools, context.SystemInfo, verbose))
-          return false;
-        updatePackagePrefix(context, dependPackage, buildType, verbose);
-
-        if (!install(context, allPackages, dependPackage, buildType, verbose))
-          return false;
+    // Recreate source/build directories after installing dependencies
+    // (they may have been cleaned up by dependency builds)
+    if (!deps.empty() && !package.IsBinary) {
+      if (!std::filesystem::exists(sourceDir) && !std::filesystem::create_directories(sourceDir)) {
+        fprintf(stderr, "ERROR: can't create directory at %s\n", sourceDir.string().c_str());
+        return false;
       }
-
-      // Recreate source/build directories after installing dependencies
-      // (they may have been cleaned up by dependency builds)
-      if (!package.IsBinary) {
-        if (!std::filesystem::exists(sourceDir) && !std::filesystem::create_directories(sourceDir)) {
-          fprintf(stderr, "ERROR: can't create directory at %s\n", sourceDir.string().c_str());
-          return false;
-        }
-        if (!std::filesystem::exists(buildDir) && !std::filesystem::create_directories(buildDir)) {
-          fprintf(stderr, "ERROR: can't create directory at %s\n", buildDir.string().c_str());
-          return false;
-        }
+      if (!std::filesystem::exists(buildDir) && !std::filesystem::create_directories(buildDir)) {
+        fprintf(stderr, "ERROR: can't create directory at %s\n", buildDir.string().c_str());
+        return false;
       }
     }
   }
 
   // Install binary depends (into the same install directory as this package)
   {
-    std::string dependsBinaryVariable;
-    if (loadSingleVariable(package.BuildFile, "DEPENDS_BINARY", dependsBinaryVariable) && !dependsBinaryVariable.empty()) {
-      StringSplitter splitter(dependsBinaryVariable, "\r\n ");
-      while (splitter.next()) {
-        std::string d(splitter.get());
-
-        // Parse package@version format
-        std::string dependName;
-        std::string dependVersion;
-        size_t atPos = d.find('@');
-        if (atPos != std::string::npos) {
-          dependName = d.substr(0, atPos);
-          dependVersion = d.substr(atPos + 1);
-        } else {
-          dependName = d;
-        }
-
-        // search package
-        auto It = allPackages.find(dependName);
-        if (It == allPackages.end()) {
-          fprintf(stderr, "ERROR: %s depends on non-existent package %s\n", package.Name.c_str(), dependName.c_str());
-          return false;
-        }
-
-        auto &dependPackage = It->second;
-        if (!inspectPackage(context, dependPackage, dependVersion, verbose))
-          return false;
-        if (!searchCompilers(dependPackage.Languages, context.Compilers, context.Tools, context.SystemInfo, verbose))
-          return false;
-        updatePackagePrefix(context, dependPackage, buildType, verbose);
-
-        if (!install(context, allPackages, dependPackage, buildType, verbose, package.Prefix))
-          return false;
-      }
+    std::vector<CPackage> binaryDeps;
+    if (!collectDependencies(package.BuildFile, "DEPENDS_BINARY", package.Name, allPackages, context, verbose, binaryDeps))
+      return false;
+    for (auto &dep : binaryDeps) {
+      updatePackagePrefix(context, dep, buildType, verbose);
+      if (!install(context, allPackages, dep, buildType, verbose, package.Prefix))
+        return false;
     }
   }
 
@@ -1462,7 +1458,15 @@ int main(int argc, char **argv)
 
       // CMake export
       if (exportCmake) {
-        if (!cmakeExport(package, context.GlobalSettings, context.Compilers, context.Tools, context.SystemInfo, outputPath, verbose))
+        std::vector<CPackage> dependencies;
+        if (!collectDependencies(package.BuildFile, "DEPENDS", package.Name, packages, context, verbose, dependencies))
+          return 1;
+        for (auto &dep : dependencies) {
+          for (const auto &bt : buildTypes)
+            updatePackagePrefix(context, dep, bt, verbose);
+        }
+
+        if (!cmakeExport(package, dependencies, context.GlobalSettings, context.Compilers, context.Tools, context.SystemInfo, outputPath, verbose))
           return 1;
       }
       break;
