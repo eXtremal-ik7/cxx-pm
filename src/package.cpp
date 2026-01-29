@@ -73,8 +73,8 @@ std::filesystem::path packagePrefix(const std::filesystem::path &cxxPmHome, cons
       previousId = info.Id;
     }
 
-    std::string toolchainId = sha3StringHash(toolchainString).substr(0, 32);
-    std::string packageId = sha3StringHash(packageIdString).substr(0, 32);
+    std::string toolchainId = sha3StringHashBase64url(toolchainString, 12);
+    std::string packageId = sha3StringHashBase64url(packageIdString, 12);
 
     if (verbose) {
       printf("toolchain: %s id: %s\n", toolchainString.c_str(), toolchainId.c_str());

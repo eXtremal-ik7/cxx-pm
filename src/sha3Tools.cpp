@@ -1,6 +1,7 @@
 #include "sha3Tools.h"
 extern "C" {
 #include "sha3.h"
+#include "base64.h"
 }
 #include "strExtras.h"
 #include <map>
@@ -43,6 +44,33 @@ std::string sha3StringHash(const std::string &s)
   sha3Final(&ctx, hash, 0);
   bin2hexLowerCase(hash, hex, 32);
   return hex;
+}
+
+std::string sha3StringHashBase64url(const std::string &s, size_t bytes)
+{
+  uint8_t hash[32];
+  CCtxSha3 ctx;
+  sha3Init(&ctx, 32);
+  sha3Update(&ctx, s.data(), s.size());
+  sha3Final(&ctx, hash, 0);
+
+  if (bytes > 32)
+    bytes = 32;
+  char b64[48] = {0};
+  size_t len = base64Encode(b64, hash, bytes);
+
+  // Convert to base64url: replace + with - and / with _
+  std::string result(b64, len);
+  for (char &c : result) {
+    if (c == '+') c = '-';
+    else if (c == '/') c = '_';
+  }
+
+  // Strip padding
+  while (!result.empty() && result.back() == '=')
+    result.pop_back();
+
+  return result;
 }
 
 static std::string sha3Hash(const std::filesystem::path &path, const std::string &excludeFile)

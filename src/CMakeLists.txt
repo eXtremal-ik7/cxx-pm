@@ -62,6 +62,7 @@ add_executable(cxx-pm
   package.cpp
   strExtras.cpp
   sha3.c
+  base64.c
   os.cpp
   sha3Tools.cpp
   ecdsa.cpp
@@ -87,6 +88,7 @@ if (FULL_BUILD)
     sha3Tools.cpp
     strExtras.cpp
     sha3.c
+  base64.c
     ecdsa.cpp
     secp256k1/src/secp256k1.c
     secp256k1/src/precomputed_ecmult.c
