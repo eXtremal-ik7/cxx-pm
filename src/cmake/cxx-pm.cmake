@@ -39,6 +39,7 @@ function(cxxpm_initialize url hash)
   FetchContent_Declare(cxx-pm-${HASH32}
     URL ${url}
     URL_HASH SHA256=${hash}
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
   )
   
   FetchContent_MakeAvailable(cxx-pm-${HASH32})
