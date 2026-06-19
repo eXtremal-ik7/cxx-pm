@@ -25,6 +25,40 @@ function(__cxxpm_prepare)
     set(CXXPM_C_COMPILER_ARG "--compiler=C:${CMAKE_C_COMPILER}" PARENT_SCOPE)
     set(CXXPM_CXX_COMPILER_ARG "--compiler=C++:${CMAKE_CXX_COMPILER}" PARENT_SCOPE)
 
+    # Android (NDK): CMake sets CMAKE_C_COMPILER to the generic, multi-target
+    # "clang" and selects the target via injected --target flags. cxx-pm instead
+    # identifies a platform from the driver's own reported target, so hand it the
+    # NDK's per-ABI versioned driver (e.g. aarch64-linux-android24-clang): it
+    # self-reports the android triple, and package recipes can derive the NDK
+    # root + API level straight from its path.
+    if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+      if (ANDROID_TOOLCHAIN_ROOT)
+        set(_cxxpm_ndk_bin "${ANDROID_TOOLCHAIN_ROOT}/bin")
+      else()
+        set(_cxxpm_ndk_bin "${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/${ANDROID_HOST_TAG}/bin")
+      endif()
+      if (CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+        set(_cxxpm_android_triple "aarch64-linux-android")
+      elseif (CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+        set(_cxxpm_android_triple "x86_64-linux-android")
+      elseif (CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+        set(_cxxpm_android_triple "armv7a-linux-androideabi")
+      elseif (CMAKE_ANDROID_ARCH_ABI STREQUAL "x86")
+        set(_cxxpm_android_triple "i686-linux-android")
+      endif()
+      # Numeric API level (CMAKE_SYSTEM_VERSION is unreliable here — it stays 1;
+      # the NDK toolchain exposes the parsed level as ANDROID_PLATFORM_LEVEL).
+      set(_cxxpm_android_api "${ANDROID_PLATFORM_LEVEL}")
+      if (NOT _cxxpm_android_api)
+        set(_cxxpm_android_api "${ANDROID_NATIVE_API_LEVEL}")
+      endif()
+      set(_cxxpm_android_cc "${_cxxpm_ndk_bin}/${_cxxpm_android_triple}${_cxxpm_android_api}-clang")
+      if (_cxxpm_android_triple AND EXISTS "${_cxxpm_android_cc}")
+        set(CXXPM_C_COMPILER_ARG "--compiler=C:${_cxxpm_android_cc}" PARENT_SCOPE)
+        set(CXXPM_CXX_COMPILER_ARG "--compiler=C++:${_cxxpm_android_cc}++" PARENT_SCOPE)
+      endif()
+    endif()
+
     if (CMAKE_OSX_SYSROOT)
       set(CXXPM_ISYSROOT_ARG "--isysroot=${CMAKE_OSX_SYSROOT}" PARENT_SCOPE)
     endif()

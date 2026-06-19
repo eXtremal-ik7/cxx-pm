@@ -17,6 +17,11 @@ static const CCpuMapping gProcessorMapping[] = {
 
 static const CSystemMapping gSystemNameMapping[] = {
   {"apple-darwin", "Darwin", "", true},
+  // Android NDK clang reports e.g. "aarch64-unknown-linux-android24" or
+  // "armv7-unknown-linux-androideabi24"; match the vendor-prefixed form so it
+  // isn't mistaken for plain Linux (must be tried before "linux-gnu").
+  {"unknown-linux-android", "Android", "", false},
+  {"linux-android", "Android", "", false},
   {"linux-gnu", "Linux", "", true},
   {"pc-linux-gnu", "Linux", "", true},
   {"pc-cygwin", "Windows", "cygwin", true},
