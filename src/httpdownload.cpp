@@ -113,18 +113,35 @@ static bool httpDownloadImpl(const std::string &url, std::vector<uint8_t> &data)
     return false;
   }
 
+  // Content length, if the server sent one, to detect truncated bodies
+  DWORD contentLength = 0;
+  DWORD contentLengthSize = sizeof(contentLength);
+  bool hasContentLength = WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+                                              WINHTTP_HEADER_NAME_BY_INDEX, &contentLength, &contentLengthSize,
+                                              WINHTTP_NO_HEADER_INDEX) != FALSE;
+
   // Read data
   uint8_t buffer[65536];
   DWORD bytesRead = 0;
-  while (WinHttpReadData(hRequest, buffer, sizeof(buffer), &bytesRead)) {
-    if (bytesRead == 0)
-      break;
+  BOOL readOk;
+  while ((readOk = WinHttpReadData(hRequest, buffer, sizeof(buffer), &bytesRead)) && bytesRead != 0)
     data.insert(data.end(), buffer, buffer + bytesRead);
-  }
+  DWORD readError = readOk ? 0 : GetLastError();
 
   WinHttpCloseHandle(hRequest);
   WinHttpCloseHandle(hConnect);
   WinHttpCloseHandle(hSession);
+
+  if (!readOk) {
+    fprintf(stderr, "ERROR: connection broken at %zu bytes for %s (WinHttpReadData: %lu)\n",
+            data.size(), url.c_str(), readError);
+    return false;
+  }
+  if (hasContentLength && data.size() != contentLength) {
+    fprintf(stderr, "ERROR: truncated download: got %zu of %lu bytes for %s\n",
+            data.size(), (unsigned long)contentLength, url.c_str());
+    return false;
+  }
   return true;
 }
 

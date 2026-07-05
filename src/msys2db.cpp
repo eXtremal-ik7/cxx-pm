@@ -8,6 +8,7 @@ extern "C" {
 }
 #include <zstd.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unordered_set>
 #include <algorithm>
@@ -228,11 +229,12 @@ static bool zstdDecompressBuffer(const std::vector<uint8_t> &compressed, std::ve
   size_t const outChunkSize = ZSTD_DStreamOutSize();
   decompressed.clear();
 
+  size_t ret = 0;
   while (input.pos < input.size) {
     size_t oldSize = decompressed.size();
     decompressed.resize(oldSize + outChunkSize);
     ZSTD_outBuffer output = { decompressed.data() + oldSize, outChunkSize, 0 };
-    size_t ret = ZSTD_decompressStream(ctx, &output, &input);
+    ret = ZSTD_decompressStream(ctx, &output, &input);
     if (ZSTD_isError(ret)) {
       fprintf(stderr, "zstd decompression error: %s\n", ZSTD_getErrorName(ret));
       ZSTD_freeDCtx(ctx);
@@ -242,6 +244,12 @@ static bool zstdDecompressBuffer(const std::vector<uint8_t> &compressed, std::ve
   }
 
   ZSTD_freeDCtx(ctx);
+  // ret == 0 means the last frame ended exactly at the end of input; anything
+  // else is a truncated stream even though no call above reported an error
+  if (ret != 0) {
+    fprintf(stderr, "zstd decompression error: truncated input\n");
+    return false;
+  }
   return true;
 }
 
@@ -251,7 +259,13 @@ bool msys2Install(const std::filesystem::path &installDir,
   const auto &names = packageNames.empty() ? msys2DefaultPackages() : packageNames;
   const size_t maxBatchBytes = 256 * 1024 * 1024; // 256 MB memory budget per batch
 
-  static const std::string MSYS2_REPO = "https://repo.msys2.org/msys/x86_64/";
+  std::string msys2Repo = "https://repo.msys2.org/msys/x86_64/";
+  if (const char *repoOverride = getenv("CXXPM_MSYS2_REPO"); repoOverride && *repoOverride) {
+    msys2Repo = repoOverride;
+    if (msys2Repo.back() != '/')
+      msys2Repo.push_back('/');
+    printf("Using msys2 repository: %s\n", msys2Repo.c_str());
+  }
 
   std::error_code ec;
   std::filesystem::path sigDir = installDir / "msys2.sig";
@@ -259,17 +273,17 @@ bool msys2Install(const std::filesystem::path &installDir,
 
   // Step 1: Download database (with signature-based caching)
   std::vector<uint8_t> dbData;
+  std::vector<uint8_t> remoteSig;
+  bool cached = false;
   {
     printf("Checking msys2 package database...\n");
     fflush(stdout);
-    std::vector<uint8_t> remoteSig;
-    if (!httpDownloadToMemory(MSYS2_REPO + "msys.db.sig", remoteSig)) {
+    if (!httpDownloadToMemory(msys2Repo + "msys.db.sig", remoteSig)) {
       fprintf(stderr, "ERROR: failed to download msys.db.sig\n");
       return false;
     }
 
     std::vector<uint8_t> localSig;
-    bool cached = false;
     if (readFile(sigDir / "msys.db.sig", localSig) && localSig == remoteSig) {
       if (readFile(sigDir / "msys.db", dbData)) {
         printf("Database unchanged, using cached copy\n");
@@ -280,19 +294,35 @@ bool msys2Install(const std::filesystem::path &installDir,
     if (!cached) {
       printf("Downloading msys2 package database...\n");
       fflush(stdout);
-      if (!httpDownloadToMemory(MSYS2_REPO + "msys.db", dbData)) {
+      if (!httpDownloadToMemory(msys2Repo + "msys.db", dbData)) {
         fprintf(stderr, "ERROR: failed to download msys.db\n");
         return false;
       }
-      writeFile(sigDir / "msys.db", dbData);
-      writeFile(sigDir / "msys.db.sig", remoteSig);
     }
   }
 
   std::map<std::string, CMsys2Package> packages;
-  if (!msys2ParseDatabase(dbData.data(), dbData.size(), packages)) {
-    fprintf(stderr, "ERROR: failed to parse msys.db\n");
+  bool parsed = msys2ParseDatabase(dbData.data(), dbData.size(), packages) && !packages.empty();
+  if (!parsed && cached) {
+    // A cached copy that no longer parses is dropped and downloaded again
+    fprintf(stderr, "WARNING: cached msys.db is not usable, re-downloading\n");
+    cached = false;
+    dbData.clear();
+    packages.clear();
+    if (!httpDownloadToMemory(msys2Repo + "msys.db", dbData)) {
+      fprintf(stderr, "ERROR: failed to download msys.db\n");
+      return false;
+    }
+    parsed = msys2ParseDatabase(dbData.data(), dbData.size(), packages) && !packages.empty();
+  }
+  if (!parsed) {
+    fprintf(stderr, "ERROR: msys.db is not usable (parse failed or no packages)\n");
     return false;
+  }
+  // Cache only a database that actually parsed
+  if (!cached) {
+    writeFile(sigDir / "msys.db", dbData);
+    writeFile(sigDir / "msys.db.sig", remoteSig);
   }
   printf("Database: %zu packages\n", packages.size());
 
@@ -323,7 +353,7 @@ bool msys2Install(const std::filesystem::path &installDir,
     std::vector<std::future<PkgSigResult>> futures;
 
     for (size_t i = batch; i < batchEnd; i++) {
-      std::string url = MSYS2_REPO + resolved[i]->Filename + ".sig";
+      std::string url = msys2Repo + resolved[i]->Filename + ".sig";
       futures.push_back(std::async(std::launch::async, [url]() -> PkgSigResult {
         PkgSigResult r;
         r.ok = httpDownloadToMemory(url, r.sig);
@@ -395,7 +425,7 @@ bool msys2Install(const std::filesystem::path &installDir,
         printf("  [%zu/%zu] downloading %s-%s (%.1f KB)\n", dlCount, toInstall,
                pkg.Name.c_str(), pkg.Version.c_str(), pkg.CompressedSize / 1024.0);
       fflush(stdout);
-      std::string url = MSYS2_REPO + pkg.Filename;
+      std::string url = msys2Repo + pkg.Filename;
       futures.push_back(std::async(std::launch::async, [url, idx]() -> PkgDownloadResult {
         PkgDownloadResult r;
         r.index = idx;
@@ -475,7 +505,13 @@ bool msys2Install(const std::filesystem::path &installDir,
   {
     std::filesystem::path fullPath;
     std::string stdOut, stdErr;
-    run(installDir / "usr" / "bin", "bash", {"update-ca-trust"}, {}, fullPath, stdOut, stdErr, false);
+    // bash must be addressed by absolute path (the msys bin directory is not
+    // in the Windows PATH), and the script needs /usr/bin prepended so its
+    // mkdir/cp/p11-kit children resolve
+    if (!run(installDir / "usr" / "bin", installDir / "usr" / "bin" / "bash.exe", {"-c", "PATH=/usr/bin:$PATH ./update-ca-trust"}, {}, fullPath, stdOut, stdErr, true)) {
+      fprintf(stderr, "ERROR: update-ca-trust failed\n%s%s", stdOut.c_str(), stdErr.c_str());
+      return false;
+    }
   }
 #endif
 
