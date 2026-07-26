@@ -69,7 +69,8 @@ std::filesystem::path PathCache::get(const std::filesystem::path &name)
     nameForSearch += ".exe";
 #endif
 
-  for (auto I = AllPath_.rbegin(), IE = AllPath_.rend(); I != IE; ++I) {
+  // Front to back, like the OS: the msys2 bundle is prepended, so it wins
+  for (auto I = AllPath_.begin(), IE = AllPath_.end(); I != IE; ++I) {
     std::filesystem::path current = *I / nameForSearch;
     if (std::filesystem::exists(current) && !std::filesystem::is_directory(current)) {
       {

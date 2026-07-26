@@ -47,6 +47,21 @@ static bool parseUrl(const std::string &url, UrlComponents &out)
   return true;
 }
 
+static HINTERNET httpSession()
+{
+  // One process-wide session: WinHTTP handles are thread-safe, and a single
+  // session performs proxy auto-detection once instead of per download.
+  // Per-call sessions crash inside winhttp.dll on older Windows 10 builds
+  // (1809) when the parallel signature batch starts 32 of them at once
+  // (concurrent WPAD auto-proxy detection). Never closed: the process is a
+  // short-lived CLI tool.
+  static HINTERNET session = WinHttpOpen(L"cxx-pm/1.0",
+                                         WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                         WINHTTP_NO_PROXY_NAME,
+                                         WINHTTP_NO_PROXY_BYPASS, 0);
+  return session;
+}
+
 static bool httpDownloadImpl(const std::string &url, std::vector<uint8_t> &data)
 {
   UrlComponents uc;
@@ -55,10 +70,7 @@ static bool httpDownloadImpl(const std::string &url, std::vector<uint8_t> &data)
     return false;
   }
 
-  HINTERNET hSession = WinHttpOpen(L"cxx-pm/1.0",
-                                    WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                                    WINHTTP_NO_PROXY_NAME,
-                                    WINHTTP_NO_PROXY_BYPASS, 0);
+  HINTERNET hSession = httpSession();
   if (!hSession) {
     fprintf(stderr, "ERROR: WinHttpOpen failed\n");
     return false;
@@ -67,7 +79,6 @@ static bool httpDownloadImpl(const std::string &url, std::vector<uint8_t> &data)
   HINTERNET hConnect = WinHttpConnect(hSession, uc.host.c_str(), uc.port, 0);
   if (!hConnect) {
     fprintf(stderr, "ERROR: WinHttpConnect failed\n");
-    WinHttpCloseHandle(hSession);
     return false;
   }
 
@@ -78,7 +89,6 @@ static bool httpDownloadImpl(const std::string &url, std::vector<uint8_t> &data)
   if (!hRequest) {
     fprintf(stderr, "ERROR: WinHttpOpenRequest failed\n");
     WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
     return false;
   }
 
@@ -87,7 +97,6 @@ static bool httpDownloadImpl(const std::string &url, std::vector<uint8_t> &data)
     fprintf(stderr, "ERROR: WinHttpSendRequest failed\n");
     WinHttpCloseHandle(hRequest);
     WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
     return false;
   }
 
@@ -95,7 +104,6 @@ static bool httpDownloadImpl(const std::string &url, std::vector<uint8_t> &data)
     fprintf(stderr, "ERROR: WinHttpReceiveResponse failed\n");
     WinHttpCloseHandle(hRequest);
     WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
     return false;
   }
 
@@ -109,7 +117,6 @@ static bool httpDownloadImpl(const std::string &url, std::vector<uint8_t> &data)
     fprintf(stderr, "ERROR: HTTP %lu for %s\n", statusCode, url.c_str());
     WinHttpCloseHandle(hRequest);
     WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
     return false;
   }
 
@@ -130,7 +137,6 @@ static bool httpDownloadImpl(const std::string &url, std::vector<uint8_t> &data)
 
   WinHttpCloseHandle(hRequest);
   WinHttpCloseHandle(hConnect);
-  WinHttpCloseHandle(hSession);
 
   if (!readOk) {
     fprintf(stderr, "ERROR: connection broken at %zu bytes for %s (WinHttpReadData: %lu)\n",

@@ -1263,14 +1263,18 @@ int main(int argc, char **argv)
     }
   }
 
-  // Add msys2 bin directory to path
+  // Prepend, not append: bundle binaries outside this directory (usr/lib/git-core)
+  // resolve msys-2.0.dll through PATH, and a foreign msys2 winning that lookup hangs
+  // them. run() passes this environment to children.
   context.SystemInfo.MSys2Path = bashPath.parent_path();
+  std::wstring path = bashPath.parent_path().native();
   DWORD size = GetEnvironmentVariableW(L"PATH", NULL, 0);
-  std::wstring path;
-  path.resize(size - 1);
-  GetEnvironmentVariableW(L"PATH", path.data(), size);
-  path.push_back(';');
-  path.append(bashPath.parent_path().c_str());
+  if (size) {
+    path.push_back(';');
+    size_t offset = path.size();
+    path.resize(offset + size - 1);
+    GetEnvironmentVariableW(L"PATH", path.data() + offset, size);
+  }
   SetEnvironmentVariableW(L"PATH", path.c_str());
   updatePath();
 #endif

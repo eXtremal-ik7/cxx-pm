@@ -121,18 +121,26 @@ bool loadMSVCSettings(CCompilerInfo& info, CSystemInfo& systemInfo, bool verbose
     // Retrieve environment variables
     // cmd /k call "vcvarsall.bat" x64 & SET & exit 0
 
-    // If we have initialized __VSCMD_PREINIT_PATH, need restore original PATH
+    // If we have initialized __VSCMD_PREINIT_PATH, need restore original PATH,
+    // keeping the msys2 bundle in front: vcvarsall inherits and returns this PATH
     wchar_t buffer[1024];
     DWORD preinitPathSize = GetEnvironmentVariableW(L"__VSCMD_PREINIT_PATH", buffer, sizeof(buffer)/sizeof(wchar_t));
-    if (preinitPathSize > 1023) {
-      std::unique_ptr<wchar_t[]> buffer(new wchar_t[preinitPathSize + 1]);
-      GetEnvironmentVariableW(L"__VSCMD_PREINIT_PATH", buffer.get(), preinitPathSize + 1);
-      SetEnvironmentVariableW(L"PATH", buffer.get());
-      updatePath();
-    } else if (preinitPathSize > 0) {
-      std::wstring path(buffer);
-      path.push_back(';');
-      path.append(systemInfo.MSys2Path);
+    if (preinitPathSize > 0) {
+      std::wstring preinitPath;
+      if (preinitPathSize > 1023) {
+        // Buffer was too small: the returned size counts the terminating null
+        preinitPath.resize(preinitPathSize - 1);
+        GetEnvironmentVariableW(L"__VSCMD_PREINIT_PATH", preinitPath.data(), preinitPathSize);
+      } else {
+        preinitPath.assign(buffer, preinitPathSize);
+      }
+
+      std::wstring path;
+      if (!systemInfo.MSys2Path.empty()) {
+        path.append(systemInfo.MSys2Path.native());
+        path.push_back(';');
+      }
+      path.append(preinitPath);
       SetEnvironmentVariableW(L"PATH", path.c_str());
       updatePath();
     }
@@ -214,16 +222,26 @@ bool msvcLookupVersion(CSystemInfo& info)
     return false;
   }
    
-  std::string version;
+  unsigned major = 0;
+  unsigned minor = 0;
   unsigned counter = 0;
   StringSplitter splitter(buffer, ".");
   while (splitter.next()) {
-    if (counter++ < 2)
-      version.append(splitter.get());
+    if (counter == 0)
+      major = static_cast<unsigned>(strtoul(std::string(splitter.get()).c_str(), nullptr, 10));
+    else if (counter == 1)
+      minor = static_cast<unsigned>(strtoul(std::string(splitter.get()).c_str(), nullptr, 10));
+    counter++;
   }
 
-  if (counter >= 2 && version.size() >= 3) {
-    info.VSToolSetVersion = "v" + std::string(version.begin(), version.end()-1);
+  if (counter >= 2 && major != 0) {
+    // Platform toolset generation matches CMAKE_VS_PLATFORM_TOOLSET, not the
+    // compiler minor version: VS2022 ships compilers 14.30..14.4x, all of them
+    // belong to toolset v143 (VS2019 14.2x -> v142, VS2017 14.1x -> v141).
+    unsigned toolsetMinor = minor / 10;
+    if (major == 14 && minor >= 30 && minor < 50)
+      toolsetMinor = 3;
+    info.VSToolSetVersion = "v" + std::to_string(major) + std::to_string(toolsetMinor);
     return true;
   } else {
     fprintf(stderr, "ERROR: invalid format of VCToolsVersion: %s\n", buffer);
