@@ -259,7 +259,9 @@ bool msys2Install(const std::filesystem::path &installDir,
   const auto &names = packageNames.empty() ? msys2DefaultPackages() : packageNames;
   const size_t maxBatchBytes = 256 * 1024 * 1024; // 256 MB memory budget per batch
 
-  std::string msys2Repo = "https://repo.msys2.org/msys/x86_64/";
+  // The redirector, not the origin (repo.msys2.org): it answers with a 302 to a
+  // nearby mirror, so downloads do not depend on the origin's own bandwidth.
+  std::string msys2Repo = "https://mirror.msys2.org/msys/x86_64/";
   if (const char *repoOverride = getenv("CXXPM_MSYS2_REPO"); repoOverride && *repoOverride) {
     msys2Repo = repoOverride;
     if (msys2Repo.back() != '/')
