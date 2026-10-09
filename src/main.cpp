@@ -452,8 +452,13 @@ bool downloadPackageFiles(const CContext& context,
         fprintf(stderr, "Unpacking error\n");
         return false;
       }
-    } else if (endsWith(archiveFilePathPosix.string(), ".tar.gz")) {
+    } else if (endsWith(archiveFilePathPosix.string(), ".tar.gz") || endsWith(archiveFilePathPosix.string(), ".tgz")) {
       if (!runNoCapture(".", "tar", { "-xzf", archiveFilePathPosix.string(), "-C", destinationPosix.string() }, tarEnv, true)) {
+        fprintf(stderr, "Unpacking error\n");
+        return false;
+      }
+    } else if (endsWith(archiveFilePathPosix.string(), ".tar.xz")) {
+      if (!runNoCapture(".", "tar", { "-xJf", archiveFilePathPosix.string(), "-C", destinationPosix.string() }, tarEnv, true)) {
         fprintf(stderr, "Unpacking error\n");
         return false;
       }
